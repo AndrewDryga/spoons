@@ -12,7 +12,7 @@
 -------------------
 local LOG           = true
 local LOCK_MS       = 70   -- shorter debounce for faster repeated taps
-local HOP_SETTLE_MS = 0.16 -- delay before focusing a window in the *new* space
+local HOP_SETTLE_MS = 0.25 -- delay before focusing a window in the *new* space
 local AS_KD_DELAY   = 0.010
 local AS_KU_DELAY   = 0.005
 local ET_RELEASE_US = 1200 -- eventtap key up after this many µs
@@ -112,16 +112,26 @@ end
 
 -- Fire both paths quickly (AS → ET), then schedule a focus in the new space
 local function hopAndFocus(scr, dir, which) -- which: "first"|"last"
+    log("hopAndFocus: Hopping", dir, "to focus", which, "window.")
     -- Fire AS; if macOS occasionally ignores it, ET covers it a few hundred µs later.
     hop_AS(dir)
     hop_ET(dir)
 
+    log("hopAndFocus: Scheduling focus check in", HOP_SETTLE_MS, "seconds.")
     hs.timer.doAfter(HOP_SETTLE_MS, function()
+        log("hopAndFocus: Timer fired. Looking for windows on screen", scr:getUUID())
         local wins = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-        if #wins == 0 then return end
+        if #wins == 0 then
+            log("hopAndFocus: Found no windows in new space. Aborting focus.")
+            return
+        end
+        log("hopAndFocus: Found", #wins, "windows. Targeting:", which)
         local t = (which == "first") and wins[1] or wins[#wins]
         if t then
+            log("hopAndFocus: Focusing window:", safeTitle(t), "(ID:", t:id(), ")")
             t:raise(); t:focus()
+        else
+            log("hopAndFocus: Target window is nil. Something went wrong.")
         end
     end)
 end
@@ -144,6 +154,7 @@ local function cycle(dir) -- "next" | "prev"
         log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
 
         if n == 0 then
+            log("Cycle: No windows on this space, initiating hop.")
             hopAndFocus(scr, (dir == "next") and "right" or "left", (dir == "next") and "first" or "last")
             return
         end
@@ -155,18 +166,22 @@ local function cycle(dir) -- "next" | "prev"
                 break
             end
         end
-        log("CurrentPos =", pos)
+        log("CurrentPos =", pos, "for window:", (cur and safeTitle(cur) or "nil"))
 
         if dir == "next" then
             if not pos or pos >= n then
+                log("Cycle: At end of list or no focused window, hopping right.")
                 hopAndFocus(scr, "right", "first")
             else
+                log("Cycle: Focusing next window:", safeTitle(list[pos + 1]))
                 local t = list[pos + 1]; t:raise(); t:focus()
             end
-        else
+        else -- dir == "prev"
             if not pos or pos <= 1 then
+                log("Cycle: At start of list or no focused window, hopping left.")
                 hopAndFocus(scr, "left", "last")
             else
+                log("Cycle: Focusing previous window:", safeTitle(list[pos - 1]))
                 local t = list[pos - 1]; t:raise(); t:focus()
             end
         end
