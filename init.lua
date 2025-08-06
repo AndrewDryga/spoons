@@ -117,7 +117,7 @@ local function hopAndFocus(scr, dir, which) -- which: "first"|"last"
     hop_ET(dir)
 
     hs.timer.doAfter(HOP_SETTLE_MS, function()
-        local wins = getWindowsOnCurrentSpaceForScreen(scr, sortYthenX)
+        local wins = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
         if #wins == 0 then return end
         local t = (which == "first") and wins[1] or wins[#wins]
         if t then
@@ -139,7 +139,7 @@ end
 local function cycle(dir) -- "next" | "prev"
     withLock(function()
         local scr  = focusedScreen()
-        local list = getWindowsOnCurrentSpaceForScreen(scr, sortYthenX)
+        local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
         local n    = #list
         log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
 
