@@ -11,11 +11,11 @@
 -- Config / Logs --
 -------------------
 local LOG           = true
-local LOCK_MS       = 70         -- shorter debounce for faster repeated taps
-local HOP_SETTLE_MS = 0.16       -- delay before focusing a window in the *new* space
+local LOCK_MS       = 70   -- shorter debounce for faster repeated taps
+local HOP_SETTLE_MS = 0.16 -- delay before focusing a window in the *new* space
 local AS_KD_DELAY   = 0.010
 local AS_KU_DELAY   = 0.005
-local ET_RELEASE_US = 1200       -- eventtap key up after this many µs
+local ET_RELEASE_US = 1200 -- eventtap key up after this many µs
 local BADGE_SIZE    = 28
 local FONT_SIZE     = 15
 local TITLE_MAX_W   = 440
@@ -42,6 +42,18 @@ local function safeTitle(w)
     return (w and w:application() and w:application():name()) or "Window"
 end
 
+-- Sort windows by columns (left-to-right), then top-to-bottom within columns
+local function sortXthenY(wins)
+    table.sort(wins, function(a, b)
+        local fa, fb = a:frame(), b:frame()
+        if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end -- 10px tolerance for columns
+        if fa.y ~= fb.y then return fa.y < fb.y end
+        return a:id() < b:id()
+    end)
+    return wins
+end
+
+-- Sort windows top-to-bottom, then left-to-right
 local function sortYthenX(wins)
     table.sort(wins, function(a, b)
         local fa, fb = a:frame(), b:frame()
@@ -57,15 +69,17 @@ local function focusedScreen()
     return (fw and fw:screen()) or hs.screen.mainScreen()
 end
 
--- Windows visible on current Space for a given screen (no hs.spaces)
+-- Get windows on current Space for a screen, with optional sort
 local wf_current = hs.window.filter.defaultCurrentSpace
-local function windowsOnCurrentSpaceForScreen(scr)
+local function getWindowsOnCurrentSpaceForScreen(scr, sorter)
     local out = {}
     for _, w in ipairs(wf_current:getWindows()) do
         if w and w:screen():id() == scr:id() and good(w) then out[#out + 1] = w end
     end
-    return sortYthenX(out)
+    if sorter then return sorter(out) end
+    return out
 end
+
 
 --------------------------
 -- Fast hop primitives  --
@@ -103,7 +117,7 @@ local function hopAndFocus(scr, dir, which) -- which: "first"|"last"
     hop_ET(dir)
 
     hs.timer.doAfter(HOP_SETTLE_MS, function()
-        local wins = windowsOnCurrentSpaceForScreen(scr)
+        local wins = getWindowsOnCurrentSpaceForScreen(scr, sortYthenX)
         if #wins == 0 then return end
         local t = (which == "first") and wins[1] or wins[#wins]
         if t then
@@ -125,7 +139,7 @@ end
 local function cycle(dir) -- "next" | "prev"
     withLock(function()
         local scr  = focusedScreen()
-        local list = windowsOnCurrentSpaceForScreen(scr)
+        local list = getWindowsOnCurrentSpaceForScreen(scr, sortYthenX)
         local n    = #list
         log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
 
@@ -135,10 +149,12 @@ local function cycle(dir) -- "next" | "prev"
         end
 
         local cur = hs.window.frontmostWindow()
-        local pos = nil; for i, w in ipairs(list) do if w == cur then
+        local pos = nil; for i, w in ipairs(list) do
+            if w == cur then
                 pos = i
                 break
-            end end
+            end
+        end
         log("CurrentPos =", pos)
 
         if dir == "next" then
@@ -156,9 +172,6 @@ local function cycle(dir) -- "next" | "prev"
         end
     end)
 end
-
-hs.hotkey.bind({}, "f19", function() cycle("next") end)
-hs.hotkey.bind({}, "f18", function() cycle("prev") end)
 
 -------------------
 -- Badges (F20)  --
@@ -178,7 +191,9 @@ local function ellipsizeToWidth(s, maxW)
         local cand = s:sub(1, mid) .. ell
         if textSize(cand, FONT_SIZE).w <= maxW then
             best = cand; lo = mid + 1
-        else hi = mid - 1 end
+        else
+            hi = mid - 1
+        end
     end
     return (best ~= "" and best) or ell
 end
@@ -187,50 +202,81 @@ local function palette()
     local dark = (hs.host.interfaceStyle() == "Dark")
     if dark then
         return {
-            pillBg  = { red = 0.13, green = 0.13, blue = 0.14, alpha = 0.90 },
-            numBg   = { red = 1.00, green = 0.78, blue = 0.16, alpha = 0.98 },
-            numText = { white = 0, alpha = 1.0 },
-            title   = { white = 1, alpha = 0.98 },
+            pillBg        = { red = 0.13, green = 0.13, blue = 0.14, alpha = 0.90 },
+            numBg         = { red = 1.00, green = 0.78, blue = 0.16, alpha = 0.98 },
+            numText       = { white = 0, alpha = 1.0 },
+            title         = { white = 1, alpha = 0.98 },
+            activePillBg  = { red = 0.18, green = 0.55, blue = 0.98, alpha = 0.95 },
+            activeNumBg   = { white = 1, alpha = 1.0 },
+            activeNumText = { black = 0, alpha = 1.0 },
         }
     else
         return {
-            pillBg  = { white = 0, alpha = 0.60 },
-            numBg   = { black = 0, alpha = 0.92 },
-            numText = { white = 1, alpha = 1.0 },
-            title   = { white = 1, alpha = 1.0 },
+            pillBg        = { white = 0, alpha = 0.60 },
+            numBg         = { black = 0, alpha = 0.92 },
+            numText       = { white = 1, alpha = 1.0 },
+            title         = { white = 1, alpha = 1.0 },
+            activePillBg  = { red = 0.0, green = 0.48, blue = 1.0, alpha = 0.85 },
+            activeNumBg   = { black = 0, alpha = 0.92 },
+            activeNumText = { white = 1, alpha = 1.0 },
         }
     end
 end
 
-local function makeBadge(win, idx, pal)
-    local f      = win:frame()
-    local chipW  = BADGE_SIZE
-    local pad    = PADDING
-    local gap    = 4
-    local numStr = tostring(idx)
-    local ttl    = ellipsizeToWidth(safeTitle(win), TITLE_MAX_W)
+local function rectsOverlap(f1, f2)
+    return not (f1.x > f2.x + f2.w or
+        f1.x + f1.w < f2.x or
+        f1.y > f2.y + f2.h or
+        f1.y + f1.h < f2.y)
+end
 
-    local pillH  = math.max(BADGE_SIZE, FONT_SIZE + 12)
-    local titleW = math.max(40, textSize(ttl, FONT_SIZE).w)
-    local pillW  = chipW + gap + titleW + 14
-    local x      = f.x + pad
-    local y      = f.y + pad
-    local midY   = math.floor((pillH - FONT_SIZE) / 2) + TEXT_Y_OFFSET
+local function makeBadge(win, idx, pal, isActive, existingFrames)
+    local f          = win:frame()
+    local chipW      = BADGE_SIZE
+    local pad        = PADDING
+    local gap        = 6
+    local numStr     = tostring(idx)
+    local ttl        = ellipsizeToWidth(safeTitle(win), TITLE_MAX_W)
 
-    local c      = hs.canvas.new({ x = x, y = y, w = pillW, h = pillH })
+    local pillH      = math.max(BADGE_SIZE, FONT_SIZE + 12)
+    local titleW     = math.max(40, textSize(ttl, FONT_SIZE).w)
+    local pillW      = chipW + gap + titleW + 14
+    local midY       = math.floor((pillH - FONT_SIZE) / 2) + TEXT_Y_OFFSET
+
+    local badgeFrame = { x = f.x + pad, y = f.y + pad, w = pillW, h = pillH }
+
+    -- De-conflict with existing badges
+    local wasMoved   = true
+    while wasMoved do
+        wasMoved = false
+        for _, otherFrame in ipairs(existingFrames) do
+            if rectsOverlap(badgeFrame, otherFrame) then
+                badgeFrame.y = otherFrame.y + otherFrame.h + PADDING
+                wasMoved = true
+                break
+            end
+        end
+    end
+
+    local c = hs.canvas.new(badgeFrame)
     c:level(hs.canvas.windowLevels.overlay); c:alpha(1.0)
+
+    local pillBgColor  = isActive and pal.activePillBg or pal.pillBg
+    local numBgColor   = isActive and pal.activeNumBg or pal.numBg
+    local numTextColor = isActive and pal.activeNumText or pal.numText
+    local titleColor   = pal.title
 
     c:appendElements({
         type = "rectangle",
         action = "fill",
-        fillColor = pal.pillBg,
+        fillColor = pillBgColor,
         roundedRectRadii = { xRadius = 10, yRadius = 10 },
         frame = { x = 0, y = 0, w = pillW, h = pillH }
     })
     c:appendElements({
         type = "rectangle",
         action = "fill",
-        fillColor = pal.numBg,
+        fillColor = numBgColor,
         roundedRectRadii = { xRadius = 10, yRadius = 10 },
         frame = { x = 0, y = 0, w = chipW + 2, h = pillH }
     })
@@ -239,7 +285,7 @@ local function makeBadge(win, idx, pal)
         text = numStr,
         textFont = ".AppleSystemUIFontBold",
         textSize = FONT_SIZE,
-        textColor = pal.numText,
+        textColor = numTextColor,
         textAlignment = "center",
         frame = { x = 0, y = midY, w = chipW, h = FONT_SIZE + 2 }
     })
@@ -248,19 +294,19 @@ local function makeBadge(win, idx, pal)
         text = ttl,
         textFont = ".AppleSystemUIFont",
         textSize = FONT_SIZE,
-        textColor = pal.title,
+        textColor = titleColor,
         textAlignment = "left",
         frame = { x = chipW + gap + 2, y = midY, w = titleW, h = FONT_SIZE + 2 }
     })
 
-    c:show(); return c
+    c:show(); return c, badgeFrame
 end
 
 local numMode = { active = false, binds = {}, badges = {}, mapping = {}, tap = nil }
 
-local function buildOrderedListAndMap()
+local function buildBadgeListAndMap()
     local scr  = focusedScreen()
-    local list = windowsOnCurrentSpaceForScreen(scr)
+    local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
     local map  = {}; for i = 1, math.min(9, #list) do map[i] = list[i] end
     log("Badge list size=", #list, "showing=", math.min(9, #list))
     return list, map
@@ -278,22 +324,28 @@ end
 
 local function enterNumMode()
     if numMode.active then return end
-    for _, b in pairs(numMode.binds) do b:delete() end
-    for _, c in pairs(numMode.badges) do c:delete() end
-    numMode = { active = false, binds = {}, badges = {}, mapping = {}, tap = nil }
+    clearNumMode()
 
-    local _, mapping = buildOrderedListAndMap()
+    local _, mapping = buildBadgeListAndMap()
     local count = 0; for _ in pairs(mapping) do count = count + 1 end
     if count == 0 then
         log("No windows to label"); return
     end
 
     local pal = palette()
+    local currentWin = hs.window.frontmostWindow()
+    local drawnBadgeFrames = {}
+
     for i = 1, count do
-        local w            = mapping[i]
-        numMode.mapping[i] = w
-        numMode.badges[i]  = makeBadge(w, i, pal)
-        numMode.binds[i]   = hs.hotkey.bind({}, tostring(i), function()
+        local w                       = mapping[i]
+        local isActive                = (w == currentWin)
+        numMode.mapping[i]            = w
+
+        local badgeCanvas, badgeFrame = makeBadge(w, i, pal, isActive, drawnBadgeFrames)
+        numMode.badges[i]             = badgeCanvas
+        table.insert(drawnBadgeFrames, badgeFrame)
+
+        numMode.binds[i] = hs.hotkey.bind({}, tostring(i), function()
             local t = numMode.mapping[i]
             clearNumMode()
             if t then
@@ -311,10 +363,10 @@ local function enterNumMode()
     numMode.active = true; log("Badges shown; digits active 1.." .. tostring(count))
 end
 
+-- Hotkey Bindings
 hs.hotkey.bind({}, "f20", function()
     if numMode.active then clearNumMode() else enterNumMode() end
 end)
 
--- Cycle binds
 hs.hotkey.bind({}, "f19", function() cycle("next") end)
 hs.hotkey.bind({}, "f18", function() cycle("prev") end)
