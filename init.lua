@@ -190,6 +190,16 @@ end
 -------------------
 -- Badges (F20)  --
 -------------------
+
+-- Convert index to character: 1-9, then A-Z
+local function indexToChar(i)
+    if i <= 9 then
+        return tostring(i)
+    else
+        return string.char(string.byte('A') + i - 10)
+    end
+end
+
 local function textSize(s, size, font)
     local fnt = font or ".AppleSystemUIFont"
     local sz  = hs.drawing.getTextDrawingSize(s, { font = fnt, size = size })
@@ -249,7 +259,7 @@ local function makeBadge(win, idx, pal, isActive, existingFrames)
     local chipW      = BADGE_SIZE
     local pad        = PADDING
     local gap        = 6
-    local numStr     = tostring(idx)
+    local numStr     = indexToChar(idx)
     local ttl        = ellipsizeToWidth(safeTitle(win), TITLE_MAX_W)
 
     local pillH      = math.max(BADGE_SIZE, FONT_SIZE + 12)
@@ -321,8 +331,8 @@ local numMode = { active = false, binds = {}, badges = {}, mapping = {}, tap = n
 local function buildBadgeListAndMap()
     local scr  = focusedScreen()
     local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-    local map  = {}; for i = 1, math.min(9, #list) do map[i] = list[i] end
-    log("Badge list size=", #list, "showing=", math.min(9, #list))
+    local map  = {}; for i = 1, math.min(35, #list) do map[i] = list[i] end -- 9 digits + 26 letters
+    log("Badge list size=", #list, "showing=", math.min(35, #list))
     return list, map
 end
 
@@ -347,19 +357,19 @@ local function enterNumMode()
     end
 
     local pal = palette()
-    local currentWin = hs.window.frontmostWindow()
+    local currentWin = hs.window.focusedWindow()
     local drawnBadgeFrames = {}
 
     for i = 1, count do
         local w                       = mapping[i]
-        local isActive                = (w == currentWin)
+        local isActive                = (currentWin and w:id() == currentWin:id())
         numMode.mapping[i]            = w
 
         local badgeCanvas, badgeFrame = makeBadge(w, i, pal, isActive, drawnBadgeFrames)
         numMode.badges[i]             = badgeCanvas
         table.insert(drawnBadgeFrames, badgeFrame)
 
-        numMode.binds[i] = hs.hotkey.bind({}, tostring(i), function()
+        numMode.binds[i] = hs.hotkey.bind({}, string.lower(indexToChar(i)), function()
             local t = numMode.mapping[i]
             clearNumMode()
             if t then
@@ -370,11 +380,11 @@ local function enterNumMode()
 
     numMode.tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(evt)
         local ch = evt:getCharacters(true) or ""
-        if ch:match("^[1-9]$") then return false end
+        if string.upper(ch):match("^[1-9A-Z]$") then return false end
         clearNumMode(); return false
     end); numMode.tap:start()
 
-    numMode.active = true; log("Badges shown; digits active 1.." .. tostring(count))
+    numMode.active = true; log("Badges shown; keys active 1-9,A-Z for " .. tostring(count) .. " windows")
 end
 
 -- Hotkey Bindings - back to simple approach that works
