@@ -379,6 +379,8 @@ local function enterNumMode()
     end
 
     numMode.tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(evt)
+        local code = evt:getKeyCode()
+        if code == hs.keycodes.map["f20"] then return false end
         local ch = evt:getCharacters(true) or ""
         if string.upper(ch):match("^[1-9A-Z]$") then return false end
         clearNumMode(); return false
