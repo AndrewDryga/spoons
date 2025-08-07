@@ -11,8 +11,8 @@
 -- Config / Logs --
 -------------------
 local LOG           = true
-local LOCK_MS       = 70   -- shorter debounce for faster repeated taps
-local HOP_SETTLE_MS = 0.25 -- delay before focusing a window in the *new* space
+local LOCK_MS       = 70  -- shorter debounce for faster repeated taps
+local HOP_SETTLE_MS = 0.1 -- delay before focusing a window in the *new* space
 local AS_KD_DELAY   = 0.010
 local AS_KU_DELAY   = 0.005
 local ET_RELEASE_US = 1200 -- eventtap key up after this many µs
@@ -84,54 +84,65 @@ end
 --------------------------
 -- Fast hop primitives  --
 --------------------------
--- 1) AppleScript: key down ctrl → keycode ←/→ → key up ctrl
-local function hop_AS(dir)
-    local code = (dir == "right") and 124 or 123
-    local script = ([[
-    tell application "System Events"
-      key down control
-      delay %f
-      key code %d
-      delay %f
-      key up control
-    end tell
-  ]]):format(AS_KD_DELAY, code, AS_KU_DELAY)
-    local ok, err = hs.osascript.applescript(script)
-    if not ok and err then log("AS err:", err) end
-end
-
--- 2) Eventtap fallback: one non-autorepeat chord
-local function hop_ET(dir)
-    local key = (dir == "right") and "right" or "left"
-    local evd = hs.eventtap.event.newKeyEvent({ "ctrl" }, key, true)
-    local evu = hs.eventtap.event.newKeyEvent({ "ctrl" }, key, false)
-    evd:setProperty(hs.eventtap.event.properties.keyboardEventAutorepeat, 0)
-    evu:setProperty(hs.eventtap.event.properties.keyboardEventAutorepeat, 0)
-    evd:post(); hs.timer.usleep(ET_RELEASE_US); evu:post()
-end
-
--- Fire both paths quickly (AS → ET), then schedule a focus in the new space
+-- Use hs.spaces API for space switching
 local function hopAndFocus(scr, dir, which) -- which: "first"|"last"
-    log("hopAndFocus: Hopping", dir, "to focus", which, "window.")
-    -- Fire AS; if macOS occasionally ignores it, ET covers it a few hundred µs later.
-    hop_AS(dir)
-    hop_ET(dir)
+    log("hopAndFocus: Hopping", dir, "via hs.spaces API")
 
-    log("hopAndFocus: Scheduling focus check in", HOP_SETTLE_MS, "seconds.")
-    hs.timer.doAfter(HOP_SETTLE_MS, function()
-        log("hopAndFocus: Timer fired. Looking for windows on screen", scr:getUUID())
+    local currentSpace = hs.spaces.focusedSpace()
+    local allSpaces = hs.spaces.allSpaces()[scr:getUUID()]
+
+    if not allSpaces or not currentSpace then
+        log("hopAndFocus: Could not get spaces info")
+        return
+    end
+
+    -- Find current space index
+    local currentIndex = nil
+    for i, spaceID in ipairs(allSpaces) do
+        if spaceID == currentSpace then
+            currentIndex = i
+            break
+        end
+    end
+
+    if not currentIndex then
+        log("hopAndFocus: Could not find current space index")
+        return
+    end
+
+    -- Calculate target space
+    local targetIndex
+    if dir == "right" then
+        targetIndex = (currentIndex >= #allSpaces) and 1 or (currentIndex + 1)
+    else -- dir == "left"
+        targetIndex = (currentIndex <= 1) and #allSpaces or (currentIndex - 1)
+    end
+
+    local targetSpace = allSpaces[targetIndex]
+    log("hopAndFocus: Switching from space", currentIndex, "to space", targetIndex)
+
+    hs.spaces.gotoSpace(targetSpace)
+
+    -- Wait for space switch to complete, then focus appropriate window
+    hs.timer.doAfter(0.05, function()
         local wins = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
         if #wins == 0 then
-            log("hopAndFocus: Found no windows in new space. Aborting focus.")
+            log("hopAndFocus: No windows found on new space")
             return
         end
-        log("hopAndFocus: Found", #wins, "windows. Targeting:", which)
-        local t = (which == "first") and wins[1] or wins[#wins]
-        if t then
-            log("hopAndFocus: Focusing window:", safeTitle(t), "(ID:", t:id(), ")")
-            t:raise(); t:focus()
-        else
-            log("hopAndFocus: Target window is nil. Something went wrong.")
+
+        local targetWindow
+        if which == "first" then
+            targetWindow = wins[1]
+            log("hopAndFocus: Focusing first window:", safeTitle(targetWindow))
+        else -- which == "last"
+            targetWindow = wins[#wins]
+            log("hopAndFocus: Focusing last window:", safeTitle(targetWindow))
+        end
+
+        if targetWindow then
+            targetWindow:raise()
+            targetWindow:focus()
         end
     end)
 end
@@ -139,53 +150,41 @@ end
 -------------------
 -- Cycling (F18/19)
 -------------------
-local BUSY = false
-local function withLock(fn)
-    if BUSY then return end; BUSY = true
-    local ok, err = pcall(fn); if not ok then hs.alert.show("Error: " .. tostring(err)) end
-    hs.timer.doAfter(LOCK_MS / 1000, function() BUSY = false end)
-end
 
 local function cycle(dir) -- "next" | "prev"
-    withLock(function()
-        local scr  = focusedScreen()
-        local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-        local n    = #list
-        log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
+    log("=== KEYPRESS ===", dir, "key pressed")
+    local scr  = focusedScreen()
+    local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
+    local n    = #list
+    log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
 
-        if n == 0 then
-            log("Cycle: No windows on this space, initiating hop.")
-            hopAndFocus(scr, (dir == "next") and "right" or "left", (dir == "next") and "first" or "last")
-            return
-        end
+    if n == 0 then
+        hopAndFocus(scr, (dir == "next") and "right" or "left", (dir == "next") and "first" or "last")
+        return
+    end
 
-        local cur = hs.window.frontmostWindow()
-        local pos = nil; for i, w in ipairs(list) do
-            if w == cur then
-                pos = i
-                break
-            end
+    local cur = hs.window.frontmostWindow()
+    local pos = nil; for i, w in ipairs(list) do
+        if w == cur then
+            pos = i
+            break
         end
-        log("CurrentPos =", pos, "for window:", (cur and safeTitle(cur) or "nil"))
+    end
+    log("CurrentPos =", pos, "for window:", (cur and safeTitle(cur) or "nil"))
 
-        if dir == "next" then
-            if not pos or pos >= n then
-                log("Cycle: At end of list or no focused window, hopping right.")
-                hopAndFocus(scr, "right", "first")
-            else
-                log("Cycle: Focusing next window:", safeTitle(list[pos + 1]))
-                local t = list[pos + 1]; t:raise(); t:focus()
-            end
-        else -- dir == "prev"
-            if not pos or pos <= 1 then
-                log("Cycle: At start of list or no focused window, hopping left.")
-                hopAndFocus(scr, "left", "last")
-            else
-                log("Cycle: Focusing previous window:", safeTitle(list[pos - 1]))
-                local t = list[pos - 1]; t:raise(); t:focus()
-            end
+    if dir == "next" then
+        if not pos or pos >= n then
+            hopAndFocus(scr, "right", "first")
+        else
+            local t = list[pos + 1]; t:raise(); t:focus()
         end
-    end)
+    else -- dir == "prev"
+        if not pos or pos <= 1 then
+            hopAndFocus(scr, "left", "last")
+        else
+            local t = list[pos - 1]; t:raise(); t:focus()
+        end
+    end
 end
 
 -------------------
@@ -378,10 +377,18 @@ local function enterNumMode()
     numMode.active = true; log("Badges shown; digits active 1.." .. tostring(count))
 end
 
--- Hotkey Bindings
-hs.hotkey.bind({}, "f20", function()
-    if numMode.active then clearNumMode() else enterNumMode() end
+-- Hotkey Bindings - back to simple approach that works
+hs.hotkey.bind({}, "f18", function()
+    log("Hotkey: F18 pressed")
+    cycle("prev")
 end)
 
-hs.hotkey.bind({}, "f19", function() cycle("next") end)
-hs.hotkey.bind({}, "f18", function() cycle("prev") end)
+hs.hotkey.bind({}, "f19", function()
+    log("Hotkey: F19 pressed")
+    cycle("next")
+end)
+
+hs.hotkey.bind({}, "f20", function()
+    log("Hotkey: F20 pressed")
+    if numMode.active then clearNumMode() else enterNumMode() end
+end)
