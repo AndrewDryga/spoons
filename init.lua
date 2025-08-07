@@ -1,64 +1,85 @@
 -- =========================================
---  Window/Space Cycler — Snappy (optimistic hop, no confirmation wait)
---  F18: prev   |   F19: next   |   F20: badges 1..9
---  - Per focused display & Space; window order: top→bottom, left→right
---  - Hop order: AppleScript key-down/up (fast) → Eventtap fallback (one-shot)
---  - No “did it change?” polling; we assume hop succeeded and schedule a quick focus
---  - Ignores minimized / hidden / non-standard / tiny windows
+--  Window/Space Cycler — Snappy & Production-Ready
 -- =========================================
 
--------------------
--- Config / Logs --
--------------------
-local LOG           = true
-local LOCK_MS       = 70  -- shorter debounce for faster repeated taps
-local HOP_SETTLE_MS = 0.1 -- delay before focusing a window in the *new* space
-local AS_KD_DELAY   = 0.010
-local AS_KU_DELAY   = 0.005
-local ET_RELEASE_US = 1200 -- eventtap key up after this many µs
-local BADGE_SIZE    = 28
-local FONT_SIZE     = 15
-local TITLE_MAX_W   = 440
-local TEXT_Y_OFFSET = -2
-local PADDING       = 6
+-- Configuration
+local config = {
+    debug     = false, -- enable verbose logging
+    lockMs    = 70,    -- debounce interval for F18/F19
+    hopSettle = 0.1,   -- delay before focusing on new space
+    maxBadges = 35,    -- up to 9 digits + 26 letters
+    keys      = {
+        prev = "f18",
+        next = "f19",
+        num  = "f20",
+    },
+    badge     = {
+        size        = 28,
+        fontSize    = 15,
+        titleMaxW   = 440,
+        textYOffset = -2,
+        padding     = 6,
+    },
+}
 
+local LOG = config.debug
+
+-- Debounce helper
+local function debounce(interval, fn)
+    local _timer = nil
+    return function(...)
+        local args = table.pack(...)
+        if _timer then _timer:stop() end
+        _timer = hs.timer.doAfter(interval, function()
+            fn(table.unpack(args, 1, args.n))
+        end)
+    end
+end
 local function log(...) if LOG then print("[cycle]", ...) end end
 
-------------------------
--- Helpers & Filters  --
-------------------------
+-- Cleanup on reload
+local cleanup = {}
+function cleanup.reset()
+    -- clear modal
+    if cleanup.modal then
+        cleanup.modal:exit()
+        cleanup.modal = nil
+    end
+    -- clear tap
+    if cleanup.tap then
+        cleanup.tap:stop()
+        cleanup.tap = nil
+    end
+    -- clear hotkeys
+    if cleanup.hotkeys then
+        for _, hk in pairs(cleanup.hotkeys) do hk:delete() end
+    end
+    cleanup.hotkeys = {}
+end
+
+cleanup.reset()
+cleanup.hotkeys = {}
+
+-- Helpers & Filters
 local function good(w)
     if not (w and w:isVisible() and w:isStandard() and not w:isMinimized()) then return false end
     local app = w:application()
     if app and app:isHidden() then return false end
     local f = w:frame()
-    if not f or f.w < 8 or f.h < 8 then return false end
-    return true
+    return f and f.w >= 8 and f.h >= 8
 end
 
 local function safeTitle(w)
     local t = (w and w:title()) or ""
-    if t and #t > 0 then return t end
+    if #t > 0 then return t end
     return (w and w:application() and w:application():name()) or "Window"
 end
 
--- Sort windows by columns (left-to-right), then top-to-bottom within columns
 local function sortXthenY(wins)
     table.sort(wins, function(a, b)
         local fa, fb = a:frame(), b:frame()
-        if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end -- 10px tolerance for columns
+        if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end
         if fa.y ~= fb.y then return fa.y < fb.y end
-        return a:id() < b:id()
-    end)
-    return wins
-end
-
--- Sort windows top-to-bottom, then left-to-right
-local function sortYthenX(wins)
-    table.sort(wins, function(a, b)
-        local fa, fb = a:frame(), b:frame()
-        if fa.y ~= fb.y then return fa.y < fb.y end
-        if fa.x ~= fb.x then return fa.x < fb.x end
         return a:id() < b:id()
     end)
     return wins
@@ -69,129 +90,79 @@ local function focusedScreen()
     return (fw and fw:screen()) or hs.screen.mainScreen()
 end
 
--- Get windows on current Space for a screen, with optional sort
 local wf_current = hs.window.filter.defaultCurrentSpace
-local function getWindowsOnCurrentSpaceForScreen(scr, sorter)
+local function windowsOnCurrent(scr)
     local out = {}
     for _, w in ipairs(wf_current:getWindows()) do
-        if w and w:screen():id() == scr:id() and good(w) then out[#out + 1] = w end
+        if w:screen():id() == scr:id() and good(w) then
+            table.insert(out, w)
+        end
     end
-    if sorter then return sorter(out) end
-    return out
+    return sortXthenY(out)
 end
 
-
---------------------------
--- Fast hop primitives  --
---------------------------
--- Use hs.spaces API for space switching
-local function hopAndFocus(scr, dir, which) -- which: "first"|"last"
-    log("hopAndFocus: Hopping", dir, "via hs.spaces API")
-
-    local currentSpace = hs.spaces.focusedSpace()
-    local allSpaces = hs.spaces.allSpaces()[scr:getUUID()]
-
-    if not allSpaces or not currentSpace then
-        log("hopAndFocus: Could not get spaces info")
-        return
-    end
-
-    -- Find current space index
-    local currentIndex = nil
-    for i, spaceID in ipairs(allSpaces) do
-        if spaceID == currentSpace then
-            currentIndex = i
-            break
-        end
-    end
-
-    if not currentIndex then
-        log("hopAndFocus: Could not find current space index")
-        return
-    end
-
-    -- Calculate target space
-    local targetIndex
-    if dir == "right" then
-        targetIndex = (currentIndex >= #allSpaces) and 1 or (currentIndex + 1)
-    else -- dir == "left"
-        targetIndex = (currentIndex <= 1) and #allSpaces or (currentIndex - 1)
-    end
-
-    local targetSpace = allSpaces[targetIndex]
-    log("hopAndFocus: Switching from space", currentIndex, "to space", targetIndex)
-
-    hs.spaces.gotoSpace(targetSpace)
-
-    -- Wait for space switch to complete, then focus appropriate window
-    hs.timer.doAfter(0.05, function()
-        local wins = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-        if #wins == 0 then
-            log("hopAndFocus: No windows found on new space")
-            return
-        end
-
-        local targetWindow
-        if which == "first" then
-            targetWindow = wins[1]
-            log("hopAndFocus: Focusing first window:", safeTitle(targetWindow))
-        else -- which == "last"
-            targetWindow = wins[#wins]
-            log("hopAndFocus: Focusing last window:", safeTitle(targetWindow))
-        end
-
-        if targetWindow then
-            targetWindow:raise()
-            targetWindow:focus()
-        end
+-- Space switching with pcall
+local function hopAndFocus(scr, dir, which)
+    local ok, err = pcall(function()
+        local current = hs.spaces.focusedSpace()
+        local all     = hs.spaces.allSpaces()[scr:getUUID()]
+        if not all or not current then error("spaces API unavailable") end
+        local idx
+        for i, sid in ipairs(all) do if sid == current then idx = i end end
+        if not idx then error("current space index not found") end
+        local target = ((dir == "right") and (idx < #all and idx + 1 or 1))
+            or ((idx > 1 and idx - 1) or #all)
+        hs.spaces.gotoSpace(all[target])
+        hs.timer.doAfter(config.hopSettle, function()
+            local wins = windowsOnCurrent(scr)
+            local w    = (which == "first" and wins[1]) or wins[#wins]
+            if w then
+                w:raise(); w:focus()
+            end
+        end)
     end)
+    if not ok then log("hopAndFocus error:", err) end
 end
 
--------------------
--- Cycling (F18/19)
--------------------
-
-local function cycle(dir) -- "next" | "prev"
-    log("=== KEYPRESS ===", dir, "key pressed")
-    local scr  = focusedScreen()
-    local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-    local n    = #list
-    log("Cycle", dir, "display=", scr:getUUID(), "wins=", n)
-
-    if n == 0 then
-        hopAndFocus(scr, (dir == "next") and "right" or "left", (dir == "next") and "first" or "last")
-        return
+-- Cycling (F18/F19) with debounce
+local cyclePrev = debounce(config.lockMs / 1000, function()
+    local scr = focusedScreen()
+    local list = windowsOnCurrent(scr)
+    if #list == 0 then
+        hopAndFocus(scr, "left", "last"); return
     end
-
     local cur = hs.window.frontmostWindow()
-    local pos = nil; for i, w in ipairs(list) do
-        if w == cur then
-            pos = i
-            break
-        end
+    local pos
+    for i, w in ipairs(list) do if w == cur then pos = i end end
+    if not pos or pos <= 1 then
+        hopAndFocus(scr, "left", "last")
+    else
+        local w = list[pos - 1]; w:raise(); w:focus()
     end
-    log("CurrentPos =", pos, "for window:", (cur and safeTitle(cur) or "nil"))
+end)
 
-    if dir == "next" then
-        if not pos or pos >= n then
-            hopAndFocus(scr, "right", "first")
-        else
-            local t = list[pos + 1]; t:raise(); t:focus()
-        end
-    else -- dir == "prev"
-        if not pos or pos <= 1 then
-            hopAndFocus(scr, "left", "last")
-        else
-            local t = list[pos - 1]; t:raise(); t:focus()
-        end
+local cycleNext = debounce(config.lockMs / 1000, function()
+    local scr = focusedScreen()
+    local list = windowsOnCurrent(scr)
+    if #list == 0 then
+        hopAndFocus(scr, "right", "first"); return
     end
-end
+    local cur = hs.window.frontmostWindow()
+    local pos
+    for i, w in ipairs(list) do if w == cur then pos = i end end
+    if not pos or pos >= #list then
+        hopAndFocus(scr, "right", "first")
+    else
+        local w = list[pos + 1]; w:raise(); w:focus()
+    end
+end)
 
--------------------
--- Badges (F20)  --
--------------------
+-- Number-Mode Modal for badges
+local modal = hs.hotkey.modal.new()
+cleanup.modal = modal
+local badgeCanvases = {}
+local numActive = false
 
--- Convert index to character: 1-9, then A-Z
 local function indexToChar(i)
     if i <= 9 then
         return tostring(i)
@@ -208,12 +179,12 @@ end
 
 local function ellipsizeToWidth(s, maxW)
     if not s or s == "" then return "" end
-    if textSize(s, FONT_SIZE).w <= maxW then return s end
+    if textSize(s, config.badge.fontSize).w <= maxW then return s end
     local ell, lo, hi, best = "…", 1, #s, ""
     while lo <= hi do
         local mid = math.floor((lo + hi) / 2)
         local cand = s:sub(1, mid) .. ell
-        if textSize(cand, FONT_SIZE).w <= maxW then
+        if textSize(cand, config.badge.fontSize).w <= maxW then
             best = cand; lo = mid + 1
         else
             hi = mid - 1
@@ -256,16 +227,16 @@ end
 
 local function makeBadge(win, idx, pal, isActive, existingFrames)
     local f          = win:frame()
-    local chipW      = BADGE_SIZE
-    local pad        = PADDING
+    local chipW      = config.badge.size
+    local pad        = config.badge.padding
     local gap        = 6
     local numStr     = indexToChar(idx)
-    local ttl        = ellipsizeToWidth(safeTitle(win), TITLE_MAX_W)
+    local ttl        = ellipsizeToWidth(safeTitle(win), config.badge.titleMaxW)
 
-    local pillH      = math.max(BADGE_SIZE, FONT_SIZE + 12)
-    local titleW     = math.max(40, textSize(ttl, FONT_SIZE).w)
+    local pillH      = math.max(config.badge.size, config.badge.fontSize + 12)
+    local titleW     = math.max(40, textSize(ttl, config.badge.fontSize).w)
     local pillW      = chipW + gap + titleW + 14
-    local midY       = math.floor((pillH - FONT_SIZE) / 2) + TEXT_Y_OFFSET
+    local midY       = math.floor((pillH - config.badge.fontSize) / 2) + config.badge.textYOffset
 
     local badgeFrame = { x = f.x + pad, y = f.y + pad, w = pillW, h = pillH }
 
@@ -275,7 +246,7 @@ local function makeBadge(win, idx, pal, isActive, existingFrames)
         wasMoved = false
         for _, otherFrame in ipairs(existingFrames) do
             if rectsOverlap(badgeFrame, otherFrame) then
-                badgeFrame.y = otherFrame.y + otherFrame.h + PADDING
+                badgeFrame.y = otherFrame.y + otherFrame.h + config.badge.padding
                 wasMoved = true
                 break
             end
@@ -308,99 +279,87 @@ local function makeBadge(win, idx, pal, isActive, existingFrames)
         type = "text",
         text = numStr,
         textFont = ".AppleSystemUIFontBold",
-        textSize = FONT_SIZE,
+        textSize = config.badge.fontSize,
         textColor = numTextColor,
         textAlignment = "center",
-        frame = { x = 0, y = midY, w = chipW, h = FONT_SIZE + 2 }
+        frame = { x = 0, y = midY, w = chipW, h = config.badge.fontSize + 2 }
     })
     c:appendElements({
         type = "text",
         text = ttl,
         textFont = ".AppleSystemUIFont",
-        textSize = FONT_SIZE,
+        textSize = config.badge.fontSize,
         textColor = titleColor,
         textAlignment = "left",
-        frame = { x = chipW + gap + 2, y = midY, w = titleW, h = FONT_SIZE + 2 }
+        frame = { x = chipW + gap + 2, y = midY, w = titleW, h = config.badge.fontSize + 2 }
     })
 
-    c:show(); return c, badgeFrame
+    c:show()
+    existingFrames[#existingFrames + 1] = badgeFrame
+    return c
 end
 
-local numMode = { active = false, binds = {}, badges = {}, mapping = {}, tap = nil }
-
-local function buildBadgeListAndMap()
+local function buildBadgeList()
     local scr  = focusedScreen()
-    local list = getWindowsOnCurrentSpaceForScreen(scr, sortXthenY)
-    local map  = {}; for i = 1, math.min(35, #list) do map[i] = list[i] end -- 9 digits + 26 letters
-    log("Badge list size=", #list, "showing=", math.min(35, #list))
+    local list = windowsOnCurrent(scr)
+    local map  = {}
+    for i = 1, math.min(config.maxBadges, #list) do map[i] = list[i] end
     return list, map
 end
 
-local function clearNumMode()
-    if numMode.tap then
-        numMode.tap:stop(); numMode.tap = nil
-    end
-    for _, b in pairs(numMode.binds) do b:delete() end
-    for _, c in pairs(numMode.badges) do c:delete() end
-    numMode = { active = false, binds = {}, badges = {}, mapping = {}, tap = nil }
-    log("Badges cleared")
-end
+function modal:entered()
+    log("entered number mode")
+    numActive = true
 
-local function enterNumMode()
-    if numMode.active then return end
-    clearNumMode()
-
-    local _, mapping = buildBadgeListAndMap()
+    -- build and display badges with full styling
+    local list, mapping = buildBadgeList()
     local count = 0; for _ in pairs(mapping) do count = count + 1 end
     if count == 0 then
-        log("No windows to label"); return
+        log("No windows to label"); modal:exit(); return
     end
 
     local pal = palette()
     local currentWin = hs.window.focusedWindow()
-    local drawnBadgeFrames = {}
+    local drawnFrames = {}
+    badgeCanvases = {}
 
-    for i = 1, count do
-        local w                       = mapping[i]
-        local isActive                = (currentWin and w:id() == currentWin:id())
-        numMode.mapping[i]            = w
+    for i, w in pairs(mapping) do
+        local isActive = (currentWin and w:id() == currentWin:id())
+        local badgeCanvas, badgeFrame = makeBadge(w, i, pal, isActive, drawnFrames)
+        badgeCanvases[#badgeCanvases + 1] = badgeCanvas
+        drawnFrames[#drawnFrames + 1] = badgeFrame
 
-        local badgeCanvas, badgeFrame = makeBadge(w, i, pal, isActive, drawnBadgeFrames)
-        numMode.badges[i]             = badgeCanvas
-        table.insert(drawnBadgeFrames, badgeFrame)
-
-        numMode.binds[i] = hs.hotkey.bind({}, string.lower(indexToChar(i)), function()
-            local t = numMode.mapping[i]
-            clearNumMode()
-            if t then
-                t:raise(); t:focus()
-            end
+        -- bind number key
+        local key = string.lower(indexToChar(i))
+        cleanup.hotkeys[key] = modal:bind({}, key, function()
+            modal:exit()
+            for _, c in ipairs(badgeCanvases) do c:delete() end
+            w:raise(); w:focus()
         end)
     end
 
-    numMode.tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(evt)
-        local code = evt:getKeyCode()
-        if code == hs.keycodes.map["f20"] then return false end
-        local ch = evt:getCharacters(true) or ""
-        if string.upper(ch):match("^[1-9A-Z]$") then return false end
-        clearNumMode(); return false
-    end); numMode.tap:start()
-
-    numMode.active = true; log("Badges shown; keys active 1-9,A-Z for " .. tostring(count) .. " windows")
+    -- escape quits and clears badges
+    cleanup.hotkeys.Escape = modal:bind({}, "escape", function()
+        modal:exit()
+        for _, c in ipairs(badgeCanvases) do c:delete() end
+    end)
 end
 
--- Hotkey Bindings - back to simple approach that works
-hs.hotkey.bind({}, "f18", function()
-    log("Hotkey: F18 pressed")
-    cycle("prev")
-end)
+function modal:exited()
+    log("exited number mode")
+    numActive = false
+    for _, c in ipairs(badgeCanvases) do c:delete() end
+    badgeCanvases = {}
+end
 
-hs.hotkey.bind({}, "f19", function()
-    log("Hotkey: F19 pressed")
-    cycle("next")
-end)
-
-hs.hotkey.bind({}, "f20", function()
-    log("Hotkey: F20 pressed")
-    if numMode.active then clearNumMode() else enterNumMode() end
+-- Bind global hotkeys
+cleanup.hotkeys      = cleanup.hotkeys or {}
+cleanup.hotkeys.prev = hs.hotkey.bind({}, config.keys.prev, cyclePrev)
+cleanup.hotkeys.next = hs.hotkey.bind({}, config.keys.next, cycleNext)
+cleanup.hotkeys.num  = hs.hotkey.bind({}, config.keys.num, function()
+    if numActive then
+        modal:exit()
+    else
+        modal:enter()
+    end
 end)
