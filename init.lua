@@ -357,15 +357,18 @@ local function enter_number_mode()
     end
 
     numpadTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(e)
+        -- Handle escape key by its keycode
+        if e:getKeyCode() == 53 then
+            exit_number_mode()
+            return true
+        end
+
         local chars = e:getCharacters()
         if not chars then return false end
         local key = string.lower(chars)
         local win = keyMapping[key]
 
-        if key == "escape" then
-            exit_number_mode()
-            return true
-        elseif win then
+        if win then
             exit_number_mode()
             win:raise(); win:focus()
             return true
