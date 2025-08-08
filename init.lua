@@ -70,9 +70,18 @@ local function good(w)
 end
 
 local function safeTitle(w)
-    local t = (w and w:title()) or ""
-    if #t > 0 then return t end
-    return (w and w:application() and w:application():name()) or "Window"
+    local appName = (w and w:application() and w:application():name()) or ""
+    local title   = (w and w:title()) or ""
+
+    if #appName > 0 and #title > 0 then
+        return appName .. ": " .. title
+    elseif #appName > 0 then
+        return appName
+    elseif #title > 0 then
+        return title
+    else
+        return "Window"
+    end
 end
 
 local function sortXthenY(wins)
