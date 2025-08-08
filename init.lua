@@ -40,10 +40,10 @@ local function log(...) if LOG then print("[cycle]", ...) end end
 -- Cleanup on reload
 local cleanup = {}
 function cleanup.reset()
-    -- clear modal
-    if cleanup.modal then
-        cleanup.modal:exit()
-        cleanup.modal = nil
+    -- clear number mode tap
+    if numpadTap then
+        numpadTap:stop()
+        numpadTap = nil
     end
     -- clear tap
     if cleanup.tap then
@@ -158,10 +158,10 @@ local cycleNext = debounce(config.lockMs / 1000, function()
 end)
 
 -- Number-Mode Modal for badges
-local modal = hs.hotkey.modal.new()
-cleanup.modal = modal
 local badgeCanvases = {}
+local numpadTap = nil
 local numActive = false
+local firstBadgeRetry = true
 
 local function indexToChar(i)
     if i <= 9 then
@@ -307,17 +307,36 @@ local function buildBadgeList()
     return list, map
 end
 
-function modal:entered()
+local function exit_number_mode()
+    log("exited number mode")
+    if numpadTap then
+        numpadTap:stop()
+        numpadTap = nil
+    end
+    for _, c in ipairs(badgeCanvases) do c:delete() end
+    badgeCanvases = {}
+    numActive = false
+end
+
+local function enter_number_mode()
     log("entered number mode")
-    numActive = true
 
     -- build and display badges with full styling
     local list, mapping = buildBadgeList()
     local count = 0; for _ in pairs(mapping) do count = count + 1 end
     if count == 0 then
-        log("No windows to label"); modal:exit(); return
+        if firstBadgeRetry then
+            firstBadgeRetry = false
+            exit_number_mode()
+            hs.timer.doAfter(0.12, function() enter_number_mode() end)
+            return
+        else
+            log("No windows to label"); exit_number_mode(); return
+        end
     end
 
+    firstBadgeRetry = true
+    numActive = true
     local pal = palette()
     local currentWin = hs.window.focusedWindow()
     local drawnFrames = {}
@@ -328,28 +347,32 @@ function modal:entered()
         local badgeCanvas, badgeFrame = makeBadge(w, i, pal, isActive, drawnFrames)
         badgeCanvases[#badgeCanvases + 1] = badgeCanvas
         drawnFrames[#drawnFrames + 1] = badgeFrame
-
-        -- bind number key
-        local key = string.lower(indexToChar(i))
-        cleanup.hotkeys[key] = modal:bind({}, key, function()
-            modal:exit()
-            for _, c in ipairs(badgeCanvases) do c:delete() end
-            w:raise(); w:focus()
-        end)
     end
 
-    -- escape quits and clears badges
-    cleanup.hotkeys.Escape = modal:bind({}, "escape", function()
-        modal:exit()
-        for _, c in ipairs(badgeCanvases) do c:delete() end
-    end)
-end
+    -- Create event tap for number keys
+    local keyMapping = {}
+    for i, w in pairs(mapping) do
+        local char = string.lower(indexToChar(i))
+        keyMapping[char] = w
+    end
 
-function modal:exited()
-    log("exited number mode")
-    numActive = false
-    for _, c in ipairs(badgeCanvases) do c:delete() end
-    badgeCanvases = {}
+    numpadTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(e)
+        local chars = e:getCharacters()
+        if not chars then return false end
+        local key = string.lower(chars)
+        local win = keyMapping[key]
+
+        if key == "escape" then
+            exit_number_mode()
+            return true
+        elseif win then
+            exit_number_mode()
+            win:raise(); win:focus()
+            return true
+        end
+        return false -- pass through other keys
+    end)
+    numpadTap:start()
 end
 
 -- Bind global hotkeys
@@ -358,8 +381,8 @@ cleanup.hotkeys.prev = hs.hotkey.bind({}, config.keys.prev, cyclePrev)
 cleanup.hotkeys.next = hs.hotkey.bind({}, config.keys.next, cycleNext)
 cleanup.hotkeys.num  = hs.hotkey.bind({}, config.keys.num, function()
     if numActive then
-        modal:exit()
+        exit_number_mode()
     else
-        modal:enter()
+        enter_number_mode()
     end
 end)
