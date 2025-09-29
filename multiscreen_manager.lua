@@ -86,10 +86,6 @@ local function screenByName(name)
     return nil
 end
 
-
-
-
-
 -- Build configs for window_tile_organizer
 -- When profiles are provided from init.lua (state.options.profiles), prefer them over hardcoded builders.
 -- We clone layouts and inject targetScreen="byName:<screenName>" to keep organizer routing correct.
