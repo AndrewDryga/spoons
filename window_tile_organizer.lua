@@ -453,8 +453,11 @@ function M.teardown()
     state.hotkeys = {}
 
     -- Watcher
-    if state.spaceWatcher and state.spaceWatcher.stop then
-        pcall(function() state.spaceWatcher:stop() end)
+    if state.spaceWatcher then
+        pcall(function()
+            local sw = state.spaceWatcher
+            if sw and sw.stop then sw:stop() end
+        end)
     end
     state.spaceWatcher = nil
     state.pendingFramesBySpace = {}

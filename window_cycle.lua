@@ -71,8 +71,11 @@ end
 local wf_current = hs.window.filter.defaultCurrentSpace
 local function windowsOnCurrent(scr)
     local out = {}
-    for _, w in ipairs(wf_current:getWindows()) do
-        if w:screen():id() == scr:id() and good(w) then
+    for _, w in ipairs((wf_current and wf_current.getWindows and wf_current:getWindows()) or {}) do
+        local ws = (w and w.screen) and w:screen() or nil
+        local sid = ws and ws.id and ws:id() or nil
+        local scrid = scr and scr.id and scr:id() or nil
+        if sid and scrid and good(w) and sid == scrid then
             table.insert(out, w)
         end
     end
@@ -82,8 +85,9 @@ end
 -- Space switching with pcall
 local function hopAndFocus(scr, dir, which)
     local ok, err = pcall(function()
-        local current = hs.spaces.focusedSpace()
-        local all     = hs.spaces.allSpaces()[scr:getUUID()]
+        local current        = hs.spaces.focusedSpace()
+        local spacesByScreen = hs.spaces.allSpaces()
+        local all            = (scr and spacesByScreen and spacesByScreen[scr:getUUID()]) or nil
         if not all or not current then error("spaces API unavailable") end
         local idx
         for i, sid in ipairs(all) do if sid == current then idx = i end end
@@ -91,7 +95,7 @@ local function hopAndFocus(scr, dir, which)
         local target = ((dir == "right") and (idx < #all and idx + 1 or 1))
             or ((idx > 1 and idx - 1) or #all)
         hs.spaces.gotoSpace(all[target])
-        hs.timer.doAfter(CONFIG.hopSettle, function()
+        hs.timer.doAfter(((CONFIG and CONFIG.hopSettle) or 0.1), function()
             local wins = windowsOnCurrent(scr)
             local w    = (which == "first" and wins[1]) or wins[#wins]
             if w then
@@ -104,8 +108,10 @@ end
 
 -- Bind hotkeys and logic
 local function bindHotkeys()
-    local cyclePrev = debounce(CONFIG.lockMs / 1000, function()
+    local lockSec = (((CONFIG and type(CONFIG.lockMs) == 'number') and CONFIG.lockMs or 70) / 1000)
+    local cyclePrev = debounce(lockSec, function()
         local scr = focusedScreen()
+        if not scr then return end
         local list = windowsOnCurrent(scr)
         if #list == 0 then
             hopAndFocus(scr, "left", "last"); return
@@ -116,12 +122,15 @@ local function bindHotkeys()
         if not pos or pos <= 1 then
             hopAndFocus(scr, "left", "last")
         else
-            local w = list[pos - 1]; w:raise(); w:focus()
+            local w = list[pos - 1]; if w then
+                w:raise(); w:focus()
+            end
         end
     end)
 
-    local cycleNext = debounce(CONFIG.lockMs / 1000, function()
+    local cycleNext = debounce(lockSec, function()
         local scr = focusedScreen()
+        if not scr then return end
         local list = windowsOnCurrent(scr)
         if #list == 0 then
             hopAndFocus(scr, "right", "first"); return
@@ -132,12 +141,23 @@ local function bindHotkeys()
         if not pos or pos >= #list then
             hopAndFocus(scr, "right", "first")
         else
-            local w = list[pos + 1]; w:raise(); w:focus()
+            local w = list[pos + 1]; if w then
+                w:raise(); w:focus()
+            end
         end
     end)
 
-    state.hotkeys.prev = hs.hotkey.bind(CONFIG.keys.mod or {}, CONFIG.keys.prev or "f18", cyclePrev)
-    state.hotkeys.next = hs.hotkey.bind(CONFIG.keys.mod or {}, CONFIG.keys.next or "f19", cycleNext)
+    local binder = hs.hotkey and hs.hotkey.bind
+    if binder then
+        local modsPrev = (CONFIG and CONFIG.keys and CONFIG.keys.mod) or {}
+        local keyPrev  = (CONFIG and CONFIG.keys and CONFIG.keys.prev) or "f18"
+        local _prev    = binder(modsPrev, keyPrev, cyclePrev)
+        if _prev then state.hotkeys.prev = _prev end
+        local modsNext = (CONFIG and CONFIG.keys and CONFIG.keys.mod) or {}
+        local keyNext  = (CONFIG and CONFIG.keys and CONFIG.keys.next) or "f19"
+        local _next    = binder(modsNext, keyNext, cycleNext)
+        if _next then state.hotkeys.next = _next end
+    end
 end
 
 -- Public API

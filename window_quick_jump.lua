@@ -85,8 +85,8 @@ end
 local wf_current = hs.window.filter.defaultCurrentSpace
 local function windowsOnCurrent(scr)
     local out = {}
-    for _, w in ipairs(wf_current:getWindows()) do
-        if w:screen():id() == scr:id() and good(w) then
+    for _, w in ipairs((wf_current and wf_current.getWindows and wf_current:getWindows()) or {}) do
+        if (w and w.screen and w:screen() and w:screen().id and scr and scr.id and w:screen():id() == scr:id() and good(w)) then
             table.insert(out, w)
         end
     end
@@ -109,12 +109,12 @@ end
 
 local function ellipsizeToWidth(s, maxW)
     if not s or s == "" then return "" end
-    if textSize(s, CONFIG.badge.fontSize).w <= maxW then return s end
+    if textSize(s, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w <= maxW then return s end
     local ell, lo, hi, best = "…", 1, #s, ""
     while lo <= hi do
         local mid = math.floor((lo + hi) / 2)
         local cand = s:sub(1, mid) .. ell
-        if textSize(cand, CONFIG.badge.fontSize).w <= maxW then
+        if textSize(cand, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w <= maxW then
             best = cand; lo = mid + 1
         else
             hi = mid - 1
@@ -156,17 +156,19 @@ local function rectsOverlap(f1, f2)
 end
 
 local function makeBadge(win, idx, pal, isActive, existingFrames)
-    local f          = win:frame()
-    local chipW      = CONFIG.badge.size
-    local pad        = CONFIG.badge.padding
+    local f          = (win and win.frame and win:frame()) or { x = 0, y = 0, w = 100, h = 80 }
+    local chipW      = ((CONFIG and CONFIG.badge and CONFIG.badge.size) or 28)
+    local pad        = ((CONFIG and CONFIG.badge and CONFIG.badge.padding) or 6)
     local gap        = 6
     local numStr     = indexToChar(idx)
-    local ttl        = ellipsizeToWidth(safeTitle(win), CONFIG.badge.titleMaxW)
+    local ttl        = ellipsizeToWidth(safeTitle(win), ((CONFIG and CONFIG.badge and CONFIG.badge.titleMaxW) or 440))
 
-    local pillH      = math.max(CONFIG.badge.size, CONFIG.badge.fontSize + 12)
-    local titleW     = math.max(40, textSize(ttl, CONFIG.badge.fontSize).w)
+    local pillH      = math.max(((CONFIG and CONFIG.badge and CONFIG.badge.size) or 28),
+        (((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 12))
+    local titleW     = math.max(40, textSize(ttl, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w)
     local pillW      = chipW + gap + titleW + 14
-    local midY       = math.floor((pillH - CONFIG.badge.fontSize) / 2) + CONFIG.badge.textYOffset
+    local midY       = math.floor((pillH - ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)) / 2) +
+        ((CONFIG and CONFIG.badge and CONFIG.badge.textYOffset) or -2)
 
     local badgeFrame = { x = f.x + pad, y = f.y + pad, w = pillW, h = pillH }
 
@@ -176,7 +178,7 @@ local function makeBadge(win, idx, pal, isActive, existingFrames)
         wasMoved = false
         for _, otherFrame in ipairs(existingFrames) do
             if rectsOverlap(badgeFrame, otherFrame) then
-                badgeFrame.y = otherFrame.y + otherFrame.h + CONFIG.badge.padding
+                badgeFrame.y = otherFrame.y + otherFrame.h + pad
                 wasMoved = true
                 break
             end
@@ -209,19 +211,19 @@ local function makeBadge(win, idx, pal, isActive, existingFrames)
         type = "text",
         text = numStr,
         textFont = ".AppleSystemUIFontBold",
-        textSize = CONFIG.badge.fontSize,
+        textSize = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15),
         textColor = numTextColor,
         textAlignment = "center",
-        frame = { x = 0, y = midY, w = chipW, h = CONFIG.badge.fontSize + 2 }
+        frame = { x = 0, y = midY, w = chipW, h = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 2 }
     })
     c:appendElements({
         type = "text",
         text = ttl,
         textFont = ".AppleSystemUIFont",
-        textSize = CONFIG.badge.fontSize,
+        textSize = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15),
         textColor = titleColor,
         textAlignment = "left",
-        frame = { x = chipW + gap + 2, y = midY, w = titleW, h = CONFIG.badge.fontSize + 2 }
+        frame = { x = chipW + gap + 2, y = midY, w = titleW, h = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 2 }
     })
 
     c:show()
@@ -238,7 +240,10 @@ end
 local function exit_number_mode()
     log("exited number mode")
     if state.tap then
-        state.tap:stop()
+        pcall(function()
+            local tap = state.tap
+            if tap and tap.stop then tap:stop() end
+        end)
         state.tap = nil
     end
     for _, c in ipairs(state.canvases) do
@@ -252,7 +257,7 @@ local function enter_number_mode()
     log("entered number mode")
 
     local list = buildBadgeList()
-    local count = math.min(CONFIG.maxBadges, #list or 0)
+    local count = math.min(((CONFIG and CONFIG.maxBadges) or 35), #list or 0)
     if count == 0 then
         if state.firstBadgeRetry then
             state.firstBadgeRetry = false
@@ -309,7 +314,12 @@ local function enter_number_mode()
 
         return false -- allow other keys to pass
     end)
-    state.tap:start()
+    if state.tap then
+        pcall(function()
+            local t = state.tap
+            if t and t.start then t:start() end
+        end)
+    end
 end
 
 -- Public API
@@ -345,8 +355,11 @@ function M.setup(config)
 end
 
 function M.teardown()
-    if state.hotkey and state.hotkey.delete then
-        state.hotkey:delete()
+    if state.hotkey then
+        pcall(function()
+            local hk = state.hotkey
+            if hk and hk.delete then hk:delete() end
+        end)
     end
     state.hotkey = nil
 
