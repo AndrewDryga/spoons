@@ -1,7 +1,8 @@
 -- window_tile_organizer.lua
--- Arrange multiple app windows into named tiles with a single hotkey (preset)
--- Clean schema: layouts use space_layouts, optional focusSpaceTile, no Space switching,
--- robust screen handling, non-blocking placement and retries.
+-- Arrange multiple app windows into named tiles with a single hotkey (preset).
+-- Schema: layouts use space_layouts; focusApp is optional; no Space switching.
+-- Robust screen handling, non-blocking placement and retries. Supports percentage-based tile sizing
+-- via wPct/hPct.
 --
 -- API:
 --   local organizer = require("window_tile_organizer")
@@ -19,7 +20,7 @@
 --         name = "Editor",
 --         hotkey = { mods = {"cmd"}, key = "1" },
 --         targetScreen   = "focused",          -- "focused" | "main" | "byUUID:<uuid>" | "byName:<name>"
---         focusSpaceTile = { "current", "Top" }, -- focus a tile on current space after arranging, or nil to restore focus
+--         focusApp = "com.google.Chrome",      -- optional: focus this app if a window exists on the current space (no switching)
 --         space_layouts  = {
 --           [1]       = { ["Top"] = { "dev.zed.Zed" }, ... },   -- numeric space index
 --           current   = { ["Top"] = { "dev.zed.Zed" }, ... },   -- the current space index at apply time
@@ -59,6 +60,7 @@ local state = {
     -- Deferred placements when target space isn't current: { [spaceId] = { { win, frame }, ... } }
     pendingFramesBySpace = {},
     spaceWatcher = nil,
+    _warnedNoAddSpace = false,
 }
 
 -- Defaults
@@ -118,12 +120,19 @@ end
 
 -- Spaces helpers
 local function allSpacesForScreen(scr)
-    local all = hs.spaces.allSpaces()
-    return (all and scr and all[scr:getUUID()]) or nil
+    local ok, all = pcall(hs.spaces.allSpaces)
+    if not ok then
+        log("spaces: allSpaces() unavailable; deferring")
+        return nil
+    end
+    return (all and scr and scr.getUUID and all[scr:getUUID()]) or nil
 end
 
 local function currentSpaceId()
     local ok, sid = pcall(hs.spaces.focusedSpace)
+    if not ok then
+        log("spaces: focusedSpace() unavailable; using nil")
+    end
     return ok and sid or nil
 end
 
@@ -132,7 +141,7 @@ local function spaceIdForIndexOnScreen(scr, idx)
     if not list or #list == 0 then return nil end
     if type(idx) ~= "number" then return nil end
     if idx < 1 then idx = 1 end
-    if idx > #list then idx = #list end
+    if idx > #list then return nil end
     return list[idx]
 end
 
@@ -162,6 +171,7 @@ local function normalizeAnchor(tileName, cfg)
     local lower = (tileName or ""):lower()
     if lower == "top" then return "top-center" end
     if lower == "bottom" then return "bottom-center" end
+    if lower == "center" then return "center" end
     if lower == "top left" then return "top-left" end
     if lower == "bottom left" then return "bottom-left" end
     if lower == "top right" then return "top-right" end
@@ -181,8 +191,22 @@ end
 local function computeTileFrame(tileName, tileCfg, scr, options)
     local vf = visibleFrameOfScreen(scr)
     local pad = (options and options.padding) or 0
+
+    -- Base size from absolute or full visible frame
     local w = tileCfg.w or vf.w
     local h = tileCfg.h or vf.h
+
+    -- Support percentage-based sizing relative to visible frame
+    if tileCfg.wPct and type(tileCfg.wPct) == "number" then
+        -- wPct is expected as 0.0..1.0
+        w = math.floor(vf.w * tileCfg.wPct)
+    end
+    if tileCfg.hPct and type(tileCfg.hPct) == "number" then
+        -- hPct is expected as 0.0..1.0
+        h = math.floor(vf.h * tileCfg.hPct)
+    end
+
+    -- Ensure we don't overflow available area when scaleToFit is enabled
     if options and options.scaleToFitIfTooLarge then
         w = math.min(w, vf.w - 2 * pad)
         h = math.min(h, vf.h - 2 * pad)
@@ -196,6 +220,9 @@ local function computeTileFrame(tileName, tileCfg, scr, options)
     elseif anchor == "bottom-center" then
         x = vf.x + math.floor((vf.w - w) / 2)
         y = vf.y + vf.h - h - pad
+    elseif anchor == "center" then
+        x = vf.x + math.floor((vf.w - w) / 2)
+        y = vf.y + math.floor((vf.h - h) / 2)
     elseif anchor == "top-left" then
         x = vf.x + pad
         y = vf.y + pad
@@ -258,14 +285,49 @@ local function goodWindow(w)
     return f and f.w >= 8 and f.h >= 8
 end
 
-local function bestWindowForApp(app)
+local function bestWindowForApp(app, opts)
+    opts = opts or {}
     if not app then return nil end
-    local w = app:focusedWindow()
+
+    -- Try focused/main window first
+    local w = app.focusedWindow and app:focusedWindow() or nil
     if goodWindow(w) then return w end
-    local wins = app:allWindows() or {}
+
+    local mw = app.mainWindow and app:mainWindow() or nil
+    if goodWindow(mw) then return mw end
+
+    -- If the app is hidden, reveal it without focusing
+    if app.isHidden and app:isHidden() then
+        pcall(function() app:unhide() end)
+    end
+
+    -- Scan all windows, unminimizing if needed
+    local wins = (app.allWindows and app:allWindows()) or {}
     for _, cand in ipairs(wins) do
+        if cand and cand.isMinimized and cand:isMinimized() then
+            pcall(function() cand:unminimize() end)
+        end
         if goodWindow(cand) then return cand end
     end
+
+    -- Fallback: optionally create a new window via common menu items (non-blocking; placement will retry)
+    if opts and opts.allowMenuCreate then
+        local menuPaths = {
+            { "File",   "New Window" },
+            { "File",   "New" },
+            { "File",   "New Tab" },
+            { "Window", "New Window" },
+        }
+        for _, path in ipairs(menuPaths) do
+            local ok = false
+            pcall(function() ok = app:selectMenuItem(path) end)
+            if ok then
+                -- New window will appear shortly; let the caller retry placement asynchronously
+                return nil
+            end
+        end
+    end
+
     return nil
 end
 
@@ -310,39 +372,163 @@ local function ensureSpaceWatcher()
     state.spaceWatcher = hs.timer.doEvery(0.25, onSpaceChange)
 end
 
+-- Ensure there are at least `requiredIndex` spaces on the given screen.
+-- Non-blocking: attempts a best-effort creation if API is available, then relies on retries.
+local function ensureSpacesCount(scr, requiredIndex, attemptsLeft, delay)
+    attemptsLeft = attemptsLeft or 6
+    delay = delay or 0.30
+    if attemptsLeft < 0 then return end
+    hs.timer.doAfter(0.01, function()
+        local list = allSpacesForScreen(scr) or {}
+        if #list >= requiredIndex then return end
+        if hs.spaces and hs.spaces.addSpace then
+            local okAdd = false
+            local uuid = scr and scr.getUUID and scr:getUUID()
+            if uuid then okAdd = pcall(hs.spaces.addSpace, uuid) end
+            if not okAdd then okAdd = pcall(hs.spaces.addSpace, scr) end
+            if not okAdd then
+                log("spaces: addSpace failed; will retry")
+            end
+        else
+            log("spaces: addSpace unavailable; will retry")
+        end
+        hs.timer.doAfter(delay, function()
+            ensureSpacesCount(scr, requiredIndex, attemptsLeft - 1, delay)
+        end)
+    end)
+end
+
 -- Retry loop per tile without blocking
 local function schedulePlacementRetry(args, attemptsLeft, delay)
-    hs.timer.doAfter(delay, function()
-        M._placeTile(args, attemptsLeft - 1)
+    if not args then return end
+    local attempts = tonumber(attemptsLeft) or (state.options.retryAttempts or DEFAULT_OPTIONS.retryAttempts)
+    local d = delay or (state.options.retryInterval or DEFAULT_OPTIONS.retryInterval)
+    hs.timer.doAfter(d, function()
+        M._placeTile(args, attempts - 1)
     end)
 end
 
 -- Internal: place a single tile (called initially and via retries)
 function M._placeTile(args, attemptsLeft)
+    attemptsLeft = tonumber(attemptsLeft) or (state.options.retryAttempts or DEFAULT_OPTIONS.retryAttempts)
     if attemptsLeft < 0 then return end
 
     local scr         = args.screen
-    local spaceId     = args.spaceId
-    local isCurrent   = args.isCurrentSpace
+    local spaceIndex  = args.spaceIndex
     local frame       = args.frame
     local identifiers = args.identifiers
+
+    -- Resolve spaceId from index; if missing, either create (if possible) or fallback to existing spaces
+    local spaceId     = spaceIdForIndexOnScreen(scr, spaceIndex)
+    if not spaceId then
+        local list = allSpacesForScreen(scr) or {}
+        if hs.spaces and hs.spaces.addSpace then
+            -- Try to create missing spaces and retry later unless we can proceed via fullscreen
+            if not args.fullscreen then
+                ensureSpacesCount(scr, tonumber(spaceIndex) or 1)
+                local nextDelay = state.options.retryInterval or DEFAULT_OPTIONS.retryInterval
+                schedulePlacementRetry(args, attemptsLeft, nextDelay)
+                return
+            else
+                log("placeTile: proceeding to fullscreen without known spaceId (will let macOS create the Space)")
+            end
+        else
+            -- Fallback: reuse the closest existing space index and proceed without infinite retries
+            if #list > 0 then
+                local fallbackIdx = tonumber(spaceIndex) or 1
+                if fallbackIdx < 1 then fallbackIdx = 1 end
+                if fallbackIdx > #list then fallbackIdx = #list end
+                spaceId = list[fallbackIdx]
+                log("placeTile: addSpace unavailable; falling back to existing space index ", tostring(fallbackIdx))
+            else
+                if args.fullscreen then
+                    -- No spaces API and no list; still allow fullscreen to create a space
+                    log("placeTile: no spaceId available; continuing to fullscreen without space move")
+                else
+                    if not state._warnedNoAddSpace then
+                        state._warnedNoAddSpace = true
+                        pcall(function() hs.alert.show("Hammerspoon: cannot create Spaces; reusing existing spaces", 2) end)
+                        log("placeTile: no spaces available to fallback to; giving up for this tile")
+                    end
+                    return
+                end
+            end
+        end
+    end
+
+    -- Re-evaluate whether this is the current space at the time of placement
+    local cur = currentSpaceId()
+    local isCurrent = (cur and spaceId == cur) or false
 
     -- Try candidates in order
     for _, ident in ipairs(identifiers) do
         local app = ensureAppRunning(ident, state.options)
-        local win = bestWindowForApp(app)
+        local win = bestWindowForApp(app, { allowMenuCreate = args and args.fullscreen == true })
         if win then
             -- Move window to target screen
             moveWindowToScreen(win, scr)
-            -- Move window to target space quietly (no switching)
-            if spaceId then moveWindowToSpace(win, spaceId) end
-            -- Apply frame either now (current space) or defer for when user visits that space
-            if isCurrent then
-                setWindowFrameAsync(win, frame)
-            else
-                state.pendingFramesBySpace[spaceId] = state.pendingFramesBySpace[spaceId] or {}
-                table.insert(state.pendingFramesBySpace[spaceId], { win = win, frame = frame })
-                ensureSpaceWatcher()
+            if args and args.fullscreen then
+                -- Fullscreen path: robust multi-shot sequence for slow apps (e.g., Warp/Zed)
+                local tries = (args.full_tries or 6)
+                local delayBetween = math.max(0.30, state.options.retryInterval or DEFAULT_OPTIONS.retryInterval)
+
+                local function attemptFullscreen(step)
+                    if not (win and win.isFullScreen) then return end
+                    if win:isFullScreen() then return end
+
+                    -- Pre-activate/focus to ensure menu/keys go to the right app
+                    local app = win:application()
+                    if app and app.activate then pcall(function() app:activate() end) end
+                    pcall(function() if win.focus then win:focus() end end)
+
+                    -- 1) Try API toggle
+                    if win.setFullScreen then win:setFullScreen(true) end
+
+                    -- 2) After a short delay, try common menu fallbacks if still not fullscreen
+                    hs.timer.doAfter(0.35, function()
+                        if win and win.isFullScreen and not win:isFullScreen() then
+                            local app = win:application()
+                            if app and app.selectMenuItem then
+                                app:selectMenuItem({ "Window", "Enter Full Screen" })
+                                app:selectMenuItem({ "View", "Enter Full Screen" })
+                            end
+                            -- Additional fallback: try the standard macOS fullscreen key equivalent (Cmd+Ctrl+F)
+                            if hs and hs.eventtap and hs.eventtap.keyStroke then
+                                hs.eventtap.keyStroke({ "cmd", "ctrl" }, "F", 0)
+                            end
+                        end
+                        -- 3) Re-check after another short delay; if still not fullscreen, retry via direct re-attempts before falling back
+                        hs.timer.doAfter(0.4, function()
+                            if win and win.isFullScreen and not win:isFullScreen() then
+                                if step < tries then
+                                    attemptFullscreen(step + 1)
+                                else
+                                    -- As a final measure, retry placement to re-attempt fullscreen
+                                    args.full_tries = tries
+                                    schedulePlacementRetry(args, attemptsLeft, delayBetween)
+                                end
+                            end
+                        end)
+                    end)
+                end
+
+                -- Kick off the first attempt shortly after moving to target screen
+                hs.timer.doAfter(
+                    (((args and tonumber(args.sequenceOrder)) and ((args.sequenceOrder - 1) * 0.6) or 0) + 0.05),
+                    function() attemptFullscreen(1) end)
+                return
+            end
+            -- Move window to target space quietly (no switching) if a valid spaceId is available
+            if spaceId then
+                moveWindowToSpace(win, spaceId)
+                -- Apply frame either now (current space) or defer for when user visits that space
+                if isCurrent then
+                    setWindowFrameAsync(win, frame)
+                else
+                    state.pendingFramesBySpace[spaceId] = state.pendingFramesBySpace[spaceId] or {}
+                    table.insert(state.pendingFramesBySpace[spaceId], { win = win, frame = frame })
+                    ensureSpaceWatcher()
+                end
             end
             return
         end
@@ -372,51 +558,85 @@ local function applyLayoutCore(layout)
         end
     end
 
-    -- Place per space without switching
-    for idx, tileMap in pairs(normalized) do
-        local spaceId = spaceIdForIndexOnScreen(scr, idx)
-        if spaceId then
-            local isCurrent = (currentSpace and spaceId == currentSpace) or false
-            for tileName, idList in pairs(tileMap or {}) do
-                local tileCfg = state.tiles[tileName]
-                if tileCfg then
-                    local frame = computeTileFrame(tileName, tileCfg, scr, state.options)
-                    M._placeTile({
-                        screen         = scr,
-                        spaceId        = spaceId,
-                        isCurrentSpace = isCurrent,
-                        frame          = frame,
-                        identifiers    = toArray(idList),
-                    }, state.options.retryAttempts or DEFAULT_OPTIONS.retryAttempts)
-                else
-                    log("unknown tile: ", tileName)
+    -- Place per space without switching (iterate spaces in numeric order)
+    local spaceIndices = {}
+    for i, _ in pairs(normalized) do table.insert(spaceIndices, i) end
+    table.sort(spaceIndices, function(a, b) return (a or 0) < (b or 0) end)
+
+    local _seqOrder = 0
+    for _, idx in ipairs(spaceIndices) do
+        local tileMap = normalized[idx]
+        -- Shorthand: if a space is defined as a single-app list, treat it as a Full tile
+        if type(tileMap) == "table" and tileMap[1] and tileMap[2] == nil and type(tileMap[1]) == "string" then
+            tileMap = { ["Full"] = { tileMap[1] } }
+        end
+        -- Count total apps defined for this space to auto-fullscreen non-first spaces with a single app
+        local totalApps = 0
+        for _tn, _ids in pairs(tileMap or {}) do
+            totalApps = totalApps + #toArray(_ids)
+        end
+        local singleAppOnly = (totalApps == 1)
+        -- In single-app non-first space, pick exactly one tile to handle fullscreen placement
+        local selectedTileName, selectedIds = nil, nil
+        if idx ~= 1 and singleAppOnly then
+            if tileMap["Full"] and #toArray(tileMap["Full"]) > 0 then
+                selectedTileName = "Full"
+                selectedIds = toArray(tileMap["Full"])
+            else
+                for _tn, _ids in pairs(tileMap or {}) do
+                    local _arr = toArray(_ids)
+                    if #_arr > 0 then
+                        selectedTileName = _tn
+                        selectedIds = _arr
+                        break
+                    end
                 end
             end
-        else
-            log("space index not found on screen: ", idx)
+        end
+
+        for tileName, idList in pairs(tileMap or {}) do
+            local tileCfg = state.tiles[tileName]
+            local idsArr = toArray(idList)
+            -- Skip empty tiles outright to avoid spurious retries
+            if #idsArr > 0 then
+                -- In single-app non-first spaces, only schedule one fullscreen placement (on the selected tile)
+                if not (idx ~= 1 and singleAppOnly and tileName ~= selectedTileName) then
+                    local frame = computeTileFrame(tileName, (tileCfg or { anchor = "top-left" }), scr, state.options)
+                    log("applyLayoutCore: schedule place tile ", tileName, " on space ", idx)
+                    _seqOrder = _seqOrder + 1
+                    M._placeTile({
+                        screen        = scr,
+                        spaceIndex    = idx,
+                        frame         = frame,
+                        identifiers   = (idx ~= 1 and singleAppOnly) and selectedIds or idsArr,
+                        fullscreen    = ((tileCfg and tileCfg.fullscreen == true) or (idx ~= 1 and singleAppOnly)) and
+                            true or false,
+                        sequenceOrder = _seqOrder,
+                    }, state.options.retryAttempts or DEFAULT_OPTIONS.retryAttempts)
+                end
+            end
         end
     end
 
-    -- Focus-after: only if target space equals current (no switching)
-    local fst = layout.focusSpaceTile
-    if fst and fst[1] and fst[2] then
-        local idx
-        if fst[1] == "current" then
-            idx = currentIndex
-        else
-            idx = tonumber(fst[1])
-        end
-        if idx and currentIndex and idx == currentIndex then
-            local tileName = fst[2]
-            -- Try to focus a window that matches the tile on current space (best effort)
-            local tileMap = normalized[idx]
-            local idList = tileMap and tileMap[tileName]
-            if idList then
-                for _, ident in ipairs(toArray(idList)) do
-                    local app = getAppByIdentifier(ident)
-                    local win = bestWindowForApp(app)
-                    if win and win.focus then
-                        win:focus(); break
+    -- Focus-after: focus a specific app if it has a window on the current space of the target screen (no switching)
+    local focusIdent = layout.focusApp
+    if focusIdent and type(focusIdent) == "string" then
+        local app = getAppByIdentifier(focusIdent)
+        local win = bestWindowForApp(app, { allowMenuCreate = false })
+        if win and win.focus then
+            -- Only focus if the window is on the same screen and on the current space for that screen
+            local ws = win:screen()
+            if ws and ws:id() == scr:id() then
+                local okWS, wspaces = pcall(hs.spaces.windowSpaces, win)
+                if not okWS or not wspaces then
+                    -- Fallback: focus if on the same screen; avoid switching spaces intentionally
+                    win:focus()
+                else
+                    for _, sid in ipairs(wspaces) do
+                        if sid == currentSpace then
+                            win:focus()
+                            break
+                        end
                     end
                 end
             end

@@ -20,83 +20,120 @@ window_cycle.setup(config)
 local window_quick_jump = require("window_quick_jump")
 window_quick_jump.setup(config)
 
--- Arrange windows into predefined tiles/layouts using hotkeys
-local window_tile_organizer = require("window_tile_organizer")
+-- Declarative per-screen tiles/layouts and multiscreen orchestration
+local function printDisplays()
+    local list = hs.screen.allScreens()
+    print(string.format("[init] screens: %d", #list))
+    for i, s in ipairs(list) do
+        print(string.format("[init]   %d) %s", i, s:name() or ""))
+    end
+end
 
-local window_organizer_mods = { "cmd" }
+printDisplays()
 
-local central_window_dimensions = { w = 1714, h = 1520 }
-local side_top_window_dimensions = { w = 1059, h = 938 }
-local side_bottom_window_dimensions = { w = 1059, h = 580 }
-
+-- Bundle IDs used across layouts
+-- You can get Bundle ID using `osascript -e 'id of app "Dash"'`
 local bundle_ids = {
-    zed = "dev.zed.Zed",
-    warp = "dev.warp.Warp-Stable",
+    zed    = "dev.zed.Zed",
+    warp   = "dev.warp.Warp-Stable",
     chrome = "com.google.Chrome",
-    slack = "com.tinyspeck.slackmacgap",
-    dash = "com.kapeli.dash",
-    chat = "com.openai.chat",
-    music = "com.apple.Music",
+    slack  = "com.tinyspeck.slackmacgap",
+    dash   = "com.kapeli.dashdoc",
+    chat   = "com.openai.chat",
+    music  = "com.apple.Music",
 }
 
-window_tile_organizer.setup({
-    tiles = {
-        ["Top"]          = { anchor = "top-center", w = central_window_dimensions.w, h = central_window_dimensions.h },
-        ["Top Left"]     = { anchor = "top-left", w = side_top_window_dimensions.w, h = side_top_window_dimensions.h },
-        ["Top Right"]    = { anchor = "top-right", w = side_top_window_dimensions.w, h = side_top_window_dimensions.h },
-        ["Bottom Left"]  = { anchor = "bottom-left", w = side_bottom_window_dimensions.w, h = side_bottom_window_dimensions.h },
-        ["Bottom Right"] = { anchor = "bottom-right", w = side_bottom_window_dimensions.w, h = side_bottom_window_dimensions.h },
-    },
-    layouts = {
-        {
-            name = "Editor",
-            hotkey = { mods = window_organizer_mods, key = "1" },
-            focusSpaceTile = { "1", "Top" },
-            space_layouts = {
-                [1] = {
-                    ["Top"]          = { bundle_ids.zed },
-                    ["Top Left"]     = { bundle_ids.slack },
-                    ["Bottom Left"]  = { bundle_ids.warp },
-                    ["Top Right"]    = { bundle_ids.chrome },
-                    ["Bottom Right"] = { bundle_ids.dash, bundle_ids.chat, bundle_ids.music },
+-- Per-screen declarative configuration:
+local screens_config = {
+    ["LG ULTRAGEAR+"] = {
+        tiles = {
+            ["Top"]          = { anchor = "top-center", w = 1714, h = 1520 },
+            ["Top Left"]     = { anchor = "top-left", w = 1059, h = 938 },
+            ["Top Right"]    = { anchor = "top-right", w = 1059, h = 938 },
+            ["Bottom Left"]  = { anchor = "bottom-left", w = 1059, h = 580 },
+            ["Bottom Right"] = { anchor = "bottom-right", w = 1059, h = 580 },
+        },
+        layouts = {
+            {
+                name = "Editor",
+                hotkey = { mods = { "cmd" }, key = "1" },
+                focusApp = bundle_ids.zed,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.zed },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Bottom Left"]  = { bundle_ids.warp },
+                        ["Top Right"]    = { bundle_ids.chrome },
+                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.chat, bundle_ids.music },
+                    },
+                },
+            },
+            {
+                name = "Browser",
+                hotkey = { mods = { "cmd" }, key = "2" },
+                focusApp = bundle_ids.chrome,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.chrome },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.zed },
+                        ["Bottom Left"]  = { bundle_ids.warp },
+                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+                    },
+                },
+            },
+            {
+                name = "Terminal",
+                hotkey = { mods = { "cmd" }, key = "3" },
+                focusApp = bundle_ids.warp,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.warp },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.chrome },
+                        ["Bottom Left"]  = { bundle_ids.zed },
+                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+                    },
                 },
             },
         },
-        {
-            name = "Browser",
-            hotkey = { mods = window_organizer_mods, key = "2" },
-            focusSpaceTile = { "1", "Top" },
-            space_layouts = {
-                [1] = {
-                    ["Top"]          = { bundle_ids.chrome },
-                    ["Top Left"]     = { bundle_ids.slack },
-                    ["Top Right"]    = { bundle_ids.zed },
-                    ["Bottom Left"]  = { bundle_ids.warp },
-                    ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
-                },
-            },
+    },
+
+    ["Built-in Retina Display"] = {
+        tiles = {
+            ["Center"]       = { anchor = "center", w = 1000, h = 800 },
+            ["Top Left"]     = { anchor = "top-left", wPct = 0.5, hPct = 1.00 },
+            ["Top Right"]    = { anchor = "top-right", wPct = 0.5, hPct = 0.5 },
+            ["Bottom Right"] = { anchor = "bottom-right", wPct = 0.5, hPct = 0.5 },
         },
-        {
-            name = "Terminal",
-            hotkey = { mods = window_organizer_mods, key = "3" },
-            focusSpaceTile = { "1", "Top" },
-            space_layouts = {
-                [1] = {
-                    ["Top"]          = { bundle_ids.warp },
-                    ["Top Left"]     = { bundle_ids.slack },
-                    ["Top Right"]    = { bundle_ids.chrome },
-                    ["Bottom Left"]  = { bundle_ids.zed },
-                    ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+        layouts = {
+            {
+                name = "LaptopSpaces",
+
+                space_layouts = {
+                    [1] = {
+                        ["Center"]       = { bundle_ids.music },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.chat },
+                    },
+
+                    [2] = { bundle_ids.chrome },
+                    [3] = { bundle_ids.zed },
+                    [4] = { bundle_ids.warp },
                 },
             },
         },
     },
-    options = {
-        debug = config.debug,
-        autoLaunch = true,
-        wait = { attempts = 20, delay = 0.25 },
-        switchSpacesToPlace = true,
-        scaleToFitIfTooLarge = true,
-        padding = 0,
-    },
+}
+
+local multiscreen_manager = require("multiscreen_manager")
+
+-- Drive the manager from config while preserving current behavior.
+-- The 'profiles' map is declarative and reusable; the manager will keep using its
+-- internal defaults if it ignores unknown keys, so this doesn't break runtime.
+multiscreen_manager.setup({
+    -- Default screen will be used if not other screen matches
+    defaultScreenName = "Built-in Retina Display",
+    profiles = screens_config,
 })
