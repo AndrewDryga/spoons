@@ -14,6 +14,9 @@
 --   config.keys.prev : string (e.g., "f18")
 --   config.keys.next : string (e.g., "f19")
 
+---@diagnostic disable-next-line: undefined-global, lowercase-global
+hs = hs or {}
+
 local M = {}
 
 -- Internal state
@@ -38,7 +41,7 @@ end
 local CONFIG = nil
 local LOG = false
 local function log(...)
-    if LOG then print("[cycle]", ...) end
+    if LOG then print("[window_cycle]", ...) end
 end
 
 -- Helpers & Filters

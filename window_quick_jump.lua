@@ -20,6 +20,9 @@
 --       padding     = 6,
 --   }
 
+---@diagnostic disable-next-line: undefined-global, lowercase-global
+hs = hs or {}
+
 local M = {}
 
 -- Internal state
@@ -36,7 +39,7 @@ local state = {
 local CONFIG = nil
 local LOG = false
 local function log(...)
-    if LOG then print("[quick]", ...) end
+    if LOG then print("[window_quick_jump]", ...) end
 end
 
 -- Helpers & Filters
