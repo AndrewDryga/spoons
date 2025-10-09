@@ -72,6 +72,9 @@ local function sortXthenY(wins)
         local fa, fb = a:frame(), b:frame()
         if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end
         if fa.y ~= fb.y then return fa.y < fb.y end
+        local titleA = safeTitle(a)
+        local titleB = safeTitle(b)
+        if titleA ~= titleB then return titleA < titleB end
         return a:id() < b:id()
     end)
     return wins

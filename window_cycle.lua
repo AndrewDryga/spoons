@@ -53,11 +53,29 @@ local function good(w)
     return f and f.w >= 8 and f.h >= 8
 end
 
+local function safeTitle(w)
+    local appName = (w and w:application() and w:application():name()) or ""
+    local title   = (w and w:title()) or ""
+
+    if #appName > 0 and #title > 0 then
+        return appName .. ": " .. title
+    elseif #appName > 0 then
+        return appName
+    elseif #title > 0 then
+        return title
+    else
+        return "Window"
+    end
+end
+
 local function sortXthenY(wins)
     table.sort(wins, function(a, b)
         local fa, fb = a:frame(), b:frame()
         if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end
         if fa.y ~= fb.y then return fa.y < fb.y end
+        local titleA = safeTitle(a)
+        local titleB = safeTitle(b)
+        if titleA ~= titleB then return titleA < titleB end
         return a:id() < b:id()
     end)
     return wins
