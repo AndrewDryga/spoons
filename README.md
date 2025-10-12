@@ -254,20 +254,6 @@ spoon.WindowCycle:bindHotkeys({
 })
 ```
 
-### Function Key Setup
-
-```lua
--- F13-F20 keys (often mapped from other keys)
-spoon.WindowQuickJump:bindHotkeys({
-    toggle = {{"cmd"}, "/"}
-})
-
-spoon.WindowCycle:bindHotkeys({
-    prev = {{"cmd"}, ","},
-    next = {{"cmd"}, "."}
-})
-```
-
 ### Debugging
 
 Enable debug logging:
