@@ -49,52 +49,31 @@ jobs:
 
       - name: Create release notes
         run: |
-          cat > build/release-notes.md << 'EOF'
-          ## Hammerspoon Window Management Spoons v${{ steps.version.outputs.VERSION }}
+          VERSION="${{ steps.version.outputs.VERSION }}"
 
-          ### 📦 Included Spoons
+          # Read checksums if they exist
+          if [ -f build/checksums.txt ]; then
+              CHECKSUMS=$(cat build/checksums.txt)
+          else
+              CHECKSUMS="Checksums not available"
+          fi
 
-          #### WindowQuickJump
-          Jump to any window instantly with visual badges (1-9, A-Z).
-
-          #### WindowCycle
-          Cycle through windows and spaces seamlessly with keyboard shortcuts.
-
-          #### WindowManager
-          Advanced window manager with tiling layouts and fullscreen space management.
+          cat > build/release-notes.md << EOF
+          ## Hammerspoon Window Management Spoons v${VERSION}
 
           ### 📥 Installation
 
-          1. Download the desired `.spoon.zip` file below
-          2. Double-click to install (Hammerspoon will automatically extract to `~/.hammerspoon/Spoons/`)
-          3. Configure in your `init.lua` (see [README](https://github.com/AndrewDryga/spoons#readme) for examples)
+          1. Download the desired \`.spoon.zip\` file below
+          2. Double-click to install (Hammerspoon will automatically extract to \`~/.hammerspoon/Spoons/\`)
+          3. Configure in your \`init.lua\` (see [README](https://github.com/AndrewDryga/spoons#readme) for examples)
 
-          ### 🚀 Quick Start
-
-          ```lua
-          -- Load and configure all three Spoons
-          hs.loadSpoon("WindowQuickJump")
-          hs.loadSpoon("WindowCycle")
-          hs.loadSpoon("WindowManager")
-
-          -- Bind hotkeys
-          spoon.WindowQuickJump:bindHotkeys({
-              toggle = {{"cmd", "alt"}, "j"}
-          }):start()
-
-          spoon.WindowCycle:bindHotkeys({
-              prev = {{"cmd", "alt"}, "left"},
-              next = {{"cmd", "alt"}, "right"}
-          }):start()
-
-          -- See README for WindowManager configuration
-          ```
+          \`\`\`
 
           ### 📝 Checksums
 
-          ```
-          $(cat build/checksums.txt)
-          ```
+          \`\`\`
+          ${CHECKSUMS}
+          \`\`\`
 
           ### 📖 Documentation
 
@@ -117,6 +96,7 @@ jobs:
             build/WindowQuickJump.spoon.zip
             build/WindowCycle.spoon.zip
             build/WindowManager.spoon.zip
+            build/USBReset.spoon.zip
             build/checksums.txt
 
       - name: Upload artifacts

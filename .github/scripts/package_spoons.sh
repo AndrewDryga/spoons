@@ -75,6 +75,21 @@ package_spoon() {
     print_success "Created ${BUILD_DIR}/${zip_name}"
 }
 
+# Function to create checksums file
+create_checksums() {
+    local checksums_file="${BUILD_DIR}/checksums.txt"
+
+    print_info "Creating checksums..."
+
+    if command -v shasum >/dev/null 2>&1; then
+        (cd "$BUILD_DIR" && shasum -a 256 *.zip > checksums.txt)
+        print_success "Created checksums.txt"
+    else
+        echo "(checksums not available - shasum command not found)" > "$checksums_file"
+        print_warning "shasum command not found - checksums not created"
+    fi
+}
+
 # Function to create release info
 create_release_info() {
     local release_file="${BUILD_DIR}/RELEASE.md"
@@ -98,6 +113,9 @@ Cycle through windows and spaces seamlessly with keyboard shortcuts.
 ### WindowManager.spoon
 Advanced window manager with tiling layouts and fullscreen space management.
 
+### USBReset.spoon
+USB device reset and management for Thunderbolt docks.
+
 ## Installation
 
 1. Download the desired .spoon.zip file
@@ -107,16 +125,10 @@ Advanced window manager with tiling layouts and fullscreen space management.
 ## Checksums
 
 \`\`\`
-EOF
+$(cat "${BUILD_DIR}/checksums.txt" 2>/dev/null || echo "checksums not available")
+\`\`\`
 
-    # Add checksums for all zip files
-    if command -v shasum >/dev/null 2>&1; then
-        (cd "$BUILD_DIR" && shasum -a 256 *.zip >> "RELEASE.md")
-        echo '```' >> "$release_file"
-    else
-        echo '(checksums not available - shasum command not found)' >> "$release_file"
-        echo '```' >> "$release_file"
-    fi
+EOF
 
     print_success "Created release information"
 }
@@ -150,6 +162,9 @@ main() {
         print_error "No Spoons found to package"
         exit 1
     fi
+
+    # Create checksums
+    create_checksums
 
     # Create release information
     create_release_info
