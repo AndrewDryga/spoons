@@ -1,16 +1,18 @@
-# Hammerspoon Window Management Spoons
+# Hammerspoon Spoons
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Hammerspoon](https://img.shields.io/badge/Hammerspoon-0.9.81+-blue.svg)](http://www.hammerspoon.org/)
 [![macOS](https://img.shields.io/badge/macOS-10.12+-green.svg)](https://www.apple.com/macos/)
 
-A collection of powerful window management Spoons for [Hammerspoon](http://www.hammerspoon.org/), providing efficient keyboard-driven window control for macOS.
+A collection of powerful mostly window management Spoons for [Hammerspoon](http://www.hammerspoon.org/), providing efficient keyboard-driven window control for macOS.
 
 Warning! Large chucks of this repo (especially documentation) are vibe-coded, so don't be surprised if you find some crazy stuff.
 
 ## 🎯 Features
 
-### Three Powerful Spoons
+### Spoons
+
+**Window Management:**
 
 1. **[WindowQuickJump](#windowquickjump)** - Jump to any window instantly with visual badges
 2. **[WindowCycle](#windowcycle)** - Cycle through windows and spaces seamlessly
