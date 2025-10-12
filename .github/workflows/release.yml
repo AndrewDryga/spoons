@@ -49,8 +49,6 @@ jobs:
 
       - name: Create release notes
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-
           # Read checksums if they exist
           if [ -f build/checksums.txt ]; then
               CHECKSUMS=$(cat build/checksums.txt)
@@ -58,22 +56,27 @@ jobs:
               CHECKSUMS="Checksums not available"
           fi
 
-          cat > build/release-notes.md << EOF
-          ## Hammerspoon Window Management Spoons v${VERSION}
+          # Create release notes with proper markdown
+          cat > build/release-notes.md << 'ENDOFRELEASE'
+          ## v${{ steps.version.outputs.VERSION }}
 
           ### 📥 Installation
 
-          1. Download the desired \`.spoon.zip\` file below
-          2. Double-click to install (Hammerspoon will automatically extract to \`~/.hammerspoon/Spoons/\`)
-          3. Configure in your \`init.lua\` (see [README](https://github.com/AndrewDryga/spoons#readme) for examples)
-
-          \`\`\`
+          1. Download the desired `.spoon.zip` file below
+          2. Double-click to install (Hammerspoon will automatically extract to `~/.hammerspoon/Spoons/`)
+          3. Configure in your `init.lua` (see [README](https://github.com/AndrewDryga/spoons#readme) for examples)
 
           ### 📝 Checksums
 
-          \`\`\`
-          ${CHECKSUMS}
-          \`\`\`
+          ```
+          ENDOFRELEASE
+
+          # Append checksums
+          echo "${CHECKSUMS}" >> build/release-notes.md
+
+          # Append rest of release notes
+          cat >> build/release-notes.md << 'ENDOFRELEASE'
+          ```
 
           ### 📖 Documentation
 
@@ -82,10 +85,10 @@ jobs:
           ### 🐛 Issues & Support
 
           Report issues: [GitHub Issues](https://github.com/AndrewDryga/spoons/issues)
-          EOF
+          ENDOFRELEASE
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: Release v${{ steps.version.outputs.VERSION }}
@@ -93,10 +96,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            build/WindowQuickJump.spoon.zip
-            build/WindowCycle.spoon.zip
-            build/WindowManager.spoon.zip
-            build/USBReset.spoon.zip
+            build/*.spoon.zip
             build/checksums.txt
 
       - name: Upload artifacts
