@@ -9,7 +9,6 @@
 -- Expected config keys (with defaults):
 --   config.debug       : boolean (default: false)
 --   config.maxBadges   : integer (default: 35)
---   config.hopSettle   : number  (unused here, but fine if present)
 --   config.keys.mod    : table   (default: {})
 --   config.keys.num    : string  (default: "f20")
 --   config.badge = {
@@ -25,6 +24,35 @@ hs = hs or {}
 
 local M = {}
 
+-- Constants
+local ESCAPE_KEYCODE = 53
+local MIN_WINDOW_SIZE = 8
+local POSITION_TOLERANCE = 10
+local RETRY_DELAY = 0.12
+local BADGE_GAP = 6
+local PILL_EXTRA_HEIGHT = 12
+local PILL_TITLE_PADDING = 14
+local PILL_RADIUS = 10
+local CHIP_EXTRA_WIDTH = 2
+local MIN_TITLE_WIDTH = 40
+local TEXT_FRAME_PADDING = 2
+
+-- Default configuration values
+local DEFAULT_CONFIG = {
+    maxBadges = 35,
+    badge = {
+        size = 28,
+        fontSize = 15,
+        titleMaxW = 440,
+        textYOffset = -2,
+        padding = 6,
+    },
+    keys = {
+        mod = { "cmd" },
+        num = "8",
+    },
+}
+
 -- Internal state
 local state = {
     hotkey = nil,
@@ -38,23 +66,61 @@ local state = {
 -- Config provided via setup()
 local CONFIG = nil
 local LOG = false
+
 local function log(...)
-    if LOG then print("[window_quick_jump]", ...) end
+    if LOG then
+        print("[window_quick_jump]", ...)
+    end
 end
 
--- Helpers & Filters
+-- Safe cleanup helpers
+local function safeDelete(object, methodName)
+    if not object then return end
 
-local function good(w)
-    if not (w and w:isVisible() and w:isStandard() and not w:isMinimized()) then return false end
+    local method = object[methodName or "delete"]
+    if type(method) == "function" then
+        pcall(method, object)
+    end
+end
+
+local function safeStop(object)
+    if not object then return end
+
+    if type(object.stop) == "function" then
+        pcall(object.stop, object)
+    end
+end
+
+local function safeStart(object)
+    if not object then return end
+
+    if type(object.start) == "function" then
+        pcall(object.start, object)
+    end
+end
+
+-- Window validation and helpers
+local function isValidWindow(w)
+    if not w then return false end
+    if not (w:isVisible() and w:isStandard() and not w:isMinimized()) then
+        return false
+    end
+
     local app = w:application()
-    if app and app:isHidden() then return false end
-    local f = w:frame()
-    return f and f.w >= 8 and f.h >= 8
+    if app and app:isHidden() then
+        return false
+    end
+
+    local frame = w:frame()
+    return frame and frame.w >= MIN_WINDOW_SIZE and frame.h >= MIN_WINDOW_SIZE
 end
 
-local function safeTitle(w)
-    local appName = (w and w:application() and w:application():name()) or ""
-    local title   = (w and w:title()) or ""
+local function getWindowTitle(w)
+    if not w then return "Window" end
+
+    local app = w:application()
+    local appName = app and app:name() or ""
+    local title = w:title() or ""
 
     if #appName > 0 and #title > 0 then
         return appName .. ": " .. title
@@ -67,68 +133,125 @@ local function safeTitle(w)
     end
 end
 
-local function sortXthenY(wins)
-    table.sort(wins, function(a, b)
-        local fa, fb = a:frame(), b:frame()
-        if math.abs(fa.x - fb.x) > 10 then return fa.x < fb.x end
-        if fa.y ~= fb.y then return fa.y < fb.y end
-        local titleA = safeTitle(a)
-        local titleB = safeTitle(b)
-        if titleA ~= titleB then return titleA < titleB end
-        return a:id() < b:id()
-    end)
-    return wins
+local function compareWindows(a, b)
+    local frameA, frameB = a:frame(), b:frame()
+
+    -- Sort by X position first
+    if math.abs(frameA.x - frameB.x) > POSITION_TOLERANCE then
+        return frameA.x < frameB.x
+    end
+
+    -- Then by Y position
+    if frameA.y ~= frameB.y then
+        return frameA.y < frameB.y
+    end
+
+    -- Then by title
+    local titleA = getWindowTitle(a)
+    local titleB = getWindowTitle(b)
+    if titleA ~= titleB then
+        return titleA < titleB
+    end
+
+    -- Finally by ID for stability
+    return a:id() < b:id()
 end
 
-local function focusedScreen()
-    local fw = hs.window.frontmostWindow()
-    return (fw and fw:screen()) or hs.screen.mainScreen()
+local function sortWindows(windows)
+    table.sort(windows, compareWindows)
+    return windows
 end
 
-local wf_current = hs.window.filter.defaultCurrentSpace
-local function windowsOnCurrent(scr)
-    local out = {}
-    for _, w in ipairs((wf_current and wf_current.getWindows and wf_current:getWindows()) or {}) do
-        if (w and w.screen and w:screen() and w:screen().id and scr and scr.id and w:screen():id() == scr:id() and good(w)) then
-            table.insert(out, w)
+local function getFocusedScreen()
+    local frontWindow = hs.window.frontmostWindow()
+    return (frontWindow and frontWindow:screen()) or hs.screen.mainScreen()
+end
+
+-- Window filter for current space
+local windowFilter = hs.window.filter.defaultCurrentSpace
+
+local function getWindowsOnCurrentSpace(screen)
+    if not screen or not screen.id then
+        return {}
+    end
+
+    local windows = {}
+    local screenId = screen:id()
+
+    if windowFilter and windowFilter.getWindows then
+        for _, window in ipairs(windowFilter:getWindows()) do
+            if window and window.screen then
+                local windowScreen = window:screen()
+                if windowScreen and windowScreen.id and windowScreen:id() == screenId then
+                    if isValidWindow(window) then
+                        table.insert(windows, window)
+                    end
+                end
+            end
         end
     end
-    return sortXthenY(out)
+
+    return sortWindows(windows)
 end
 
-local function indexToChar(i)
-    if i <= 9 then
-        return tostring(i)
+-- Badge character mapping
+local function indexToChar(index)
+    if index <= 9 then
+        return tostring(index)
     else
-        return string.char(string.byte('A') + i - 10)
+        -- A=10, B=11, C=12, etc.
+        return string.char(string.byte('A') + index - 10)
     end
 end
 
-local function textSize(s, size, font)
-    local fnt = font or ".AppleSystemUIFont"
-    local sz  = hs.drawing.getTextDrawingSize(s, { font = fnt, size = size })
-    return { w = math.ceil(sz.w), h = math.ceil(sz.h) }
+-- Text measurement helpers
+local function measureText(text, fontSize, font)
+    local fontName = font or ".AppleSystemUIFont"
+    local size = hs.drawing.getTextDrawingSize(text, {
+        font = fontName,
+        size = fontSize
+    })
+    return {
+        w = math.ceil(size.w),
+        h = math.ceil(size.h)
+    }
 end
 
-local function ellipsizeToWidth(s, maxW)
-    if not s or s == "" then return "" end
-    if textSize(s, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w <= maxW then return s end
-    local ell, lo, hi, best = "…", 1, #s, ""
-    while lo <= hi do
-        local mid = math.floor((lo + hi) / 2)
-        local cand = s:sub(1, mid) .. ell
-        if textSize(cand, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w <= maxW then
-            best = cand; lo = mid + 1
+local function ellipsizeText(text, maxWidth, fontSize)
+    if not text or text == "" then
+        return ""
+    end
+
+    local textSize = measureText(text, fontSize)
+    if textSize.w <= maxWidth then
+        return text
+    end
+
+    local ellipsis = "…"
+    local low, high = 1, #text
+    local bestFit = ""
+
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        local candidate = text:sub(1, mid) .. ellipsis
+        local candidateSize = measureText(candidate, fontSize)
+
+        if candidateSize.w <= maxWidth then
+            bestFit = candidate
+            low = mid + 1
         else
-            hi = mid - 1
+            high = mid - 1
         end
     end
-    return (best ~= "" and best) or ell
+
+    return bestFit ~= "" and bestFit or ellipsis
 end
 
-local function palette()
-    local dark = (hs.host.interfaceStyle() == "Dark")
-    if dark then
+-- Color palette
+local function getColorPalette()
+    local isDarkMode = (hs.host.interfaceStyle() == "Dark")
+
+    if isDarkMode then
         return {
             pillBg        = { red = 0.13, green = 0.13, blue = 0.14, alpha = 0.90 },
             numBg         = { red = 1.00, green = 0.78, blue = 0.16, alpha = 0.98 },
@@ -151,225 +274,300 @@ local function palette()
     end
 end
 
-local function rectsOverlap(f1, f2)
-    return not (f1.x > f2.x + f2.w or
-        f1.x + f1.w < f2.x or
-        f1.y > f2.y + f2.h or
-        f1.y + f1.h < f2.y)
+-- Badge positioning helpers
+local function doRectsOverlap(rect1, rect2)
+    return not (rect1.x > rect2.x + rect2.w or
+        rect1.x + rect1.w < rect2.x or
+        rect1.y > rect2.y + rect2.h or
+        rect1.y + rect1.h < rect2.y)
 end
 
-local function makeBadge(win, idx, pal, isActive, existingFrames)
-    local f          = (win and win.frame and win:frame()) or { x = 0, y = 0, w = 100, h = 80 }
-    local chipW      = ((CONFIG and CONFIG.badge and CONFIG.badge.size) or 28)
-    local pad        = ((CONFIG and CONFIG.badge and CONFIG.badge.padding) or 6)
-    local gap        = 6
-    local numStr     = indexToChar(idx)
-    local ttl        = ellipsizeToWidth(safeTitle(win), ((CONFIG and CONFIG.badge and CONFIG.badge.titleMaxW) or 440))
+local function findNonOverlappingPosition(badgeFrame, existingFrames, padding)
+    local adjustedFrame = {
+        x = badgeFrame.x,
+        y = badgeFrame.y,
+        w = badgeFrame.w,
+        h = badgeFrame.h
+    }
 
-    local pillH      = math.max(((CONFIG and CONFIG.badge and CONFIG.badge.size) or 28),
-        (((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 12))
-    local titleW     = math.max(40, textSize(ttl, ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)).w)
-    local pillW      = chipW + gap + titleW + 14
-    local midY       = math.floor((pillH - ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15)) / 2) +
-        ((CONFIG and CONFIG.badge and CONFIG.badge.textYOffset) or -2)
+    local foundOverlap = true
+    while foundOverlap do
+        foundOverlap = false
 
-    local badgeFrame = { x = f.x + pad, y = f.y + pad, w = pillW, h = pillH }
-
-    -- De-conflict with existing badges
-    local wasMoved   = true
-    while wasMoved do
-        wasMoved = false
-        for _, otherFrame in ipairs(existingFrames) do
-            if rectsOverlap(badgeFrame, otherFrame) then
-                badgeFrame.y = otherFrame.y + otherFrame.h + pad
-                wasMoved = true
+        for _, existingFrame in ipairs(existingFrames) do
+            if doRectsOverlap(adjustedFrame, existingFrame) then
+                adjustedFrame.y = existingFrame.y + existingFrame.h + padding
+                foundOverlap = true
                 break
             end
         end
     end
 
-    local c = hs.canvas.new(badgeFrame)
-    c:level(hs.canvas.windowLevels.overlay); c:alpha(1.0)
-
-    local pillBgColor  = isActive and pal.activePillBg or pal.pillBg
-    local numBgColor   = isActive and pal.activeNumBg or pal.numBg
-    local numTextColor = isActive and pal.activeNumText or pal.numText
-    local titleColor   = pal.title
-
-    c:appendElements({
-        type = "rectangle",
-        action = "fill",
-        fillColor = pillBgColor,
-        roundedRectRadii = { xRadius = 10, yRadius = 10 },
-        frame = { x = 0, y = 0, w = pillW, h = pillH }
-    })
-    c:appendElements({
-        type = "rectangle",
-        action = "fill",
-        fillColor = numBgColor,
-        roundedRectRadii = { xRadius = 10, yRadius = 10 },
-        frame = { x = 0, y = 0, w = chipW + 2, h = pillH }
-    })
-    c:appendElements({
-        type = "text",
-        text = numStr,
-        textFont = ".AppleSystemUIFontBold",
-        textSize = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15),
-        textColor = numTextColor,
-        textAlignment = "center",
-        frame = { x = 0, y = midY, w = chipW, h = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 2 }
-    })
-    c:appendElements({
-        type = "text",
-        text = ttl,
-        textFont = ".AppleSystemUIFont",
-        textSize = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15),
-        textColor = titleColor,
-        textAlignment = "left",
-        frame = { x = chipW + gap + 2, y = midY, w = titleW, h = ((CONFIG and CONFIG.badge and CONFIG.badge.fontSize) or 15) + 2 }
-    })
-
-    c:show()
-    existingFrames[#existingFrames + 1] = badgeFrame
-    return c, badgeFrame
+    return adjustedFrame
 end
 
-local function buildBadgeList()
-    local scr  = focusedScreen()
-    local list = windowsOnCurrent(scr)
-    return list
-end
-
-local function exit_number_mode()
-    log("exited number mode")
-    if state.tap then
-        pcall(function()
-            local tap = state.tap
-            if tap and tap.stop then tap:stop() end
-        end)
-        state.tap = nil
+-- Badge creation
+local function createBadge(window, index, palette, isActive, existingFrames)
+    if not CONFIG or not CONFIG.badge then
+        log("Warning: CONFIG not initialized in createBadge")
+        return nil
     end
-    for _, c in ipairs(state.canvases) do
-        pcall(function() c:delete() end)
+
+    local config = CONFIG.badge
+
+    if not window then
+        log("Warning: createBadge called with nil window")
+        return nil
+    end
+
+    local windowFrame = window:frame()
+    if not windowFrame then
+        log("Warning: window has no frame")
+        return nil
+    end
+
+    -- Badge dimensions
+    local chipWidth = config.size
+    local padding = config.padding
+    local fontSize = config.fontSize
+    local maxTitleWidth = config.titleMaxW
+    local textYOffset = config.textYOffset
+
+    -- Prepare text
+    local badgeChar = indexToChar(index)
+    local windowTitle = getWindowTitle(window)
+    local truncatedTitle = ellipsizeText(windowTitle, maxTitleWidth, fontSize)
+
+    -- Calculate dimensions
+    local pillHeight = math.max(chipWidth, fontSize + PILL_EXTRA_HEIGHT)
+    local titleWidth = math.max(MIN_TITLE_WIDTH, measureText(truncatedTitle, fontSize).w)
+    local pillWidth = chipWidth + BADGE_GAP + titleWidth + PILL_TITLE_PADDING
+    local textMidY = math.floor((pillHeight - fontSize) / 2) + textYOffset
+
+    -- Initial position
+    local badgeFrame = {
+        x = windowFrame.x + padding,
+        y = windowFrame.y + padding,
+        w = pillWidth,
+        h = pillHeight
+    }
+
+    -- Find non-overlapping position
+    badgeFrame = findNonOverlappingPosition(badgeFrame, existingFrames, padding)
+
+    -- Create canvas
+    local canvas = hs.canvas.new(badgeFrame)
+    canvas:level(hs.canvas.windowLevels.overlay)
+    canvas:alpha(1.0)
+
+    -- Select colors based on active state
+    local colors = {
+        pill = isActive and palette.activePillBg or palette.pillBg,
+        numBg = isActive and palette.activeNumBg or palette.numBg,
+        numText = isActive and palette.activeNumText or palette.numText,
+        title = palette.title
+    }
+
+    -- Draw pill background
+    canvas:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = colors.pill,
+        roundedRectRadii = { xRadius = PILL_RADIUS, yRadius = PILL_RADIUS },
+        frame = { x = 0, y = 0, w = pillWidth, h = pillHeight }
+    })
+
+    -- Draw number chip background
+    canvas:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = colors.numBg,
+        roundedRectRadii = { xRadius = PILL_RADIUS, yRadius = PILL_RADIUS },
+        frame = { x = 0, y = 0, w = chipWidth + CHIP_EXTRA_WIDTH, h = pillHeight }
+    })
+
+    -- Draw badge number/letter
+    canvas:appendElements({
+        type = "text",
+        text = badgeChar,
+        textFont = ".AppleSystemUIFontBold",
+        textSize = fontSize,
+        textColor = colors.numText,
+        textAlignment = "center",
+        frame = { x = 0, y = textMidY, w = chipWidth, h = fontSize + TEXT_FRAME_PADDING }
+    })
+
+    -- Draw window title
+    canvas:appendElements({
+        type = "text",
+        text = truncatedTitle,
+        textFont = ".AppleSystemUIFont",
+        textSize = fontSize,
+        textColor = colors.title,
+        textAlignment = "left",
+        frame = {
+            x = chipWidth + BADGE_GAP + TEXT_FRAME_PADDING,
+            y = textMidY,
+            w = titleWidth,
+            h = fontSize + TEXT_FRAME_PADDING
+        }
+    })
+
+    canvas:show()
+    table.insert(existingFrames, badgeFrame)
+
+    return canvas
+end
+
+-- Mode management
+local function exitNumberMode()
+    log("Exiting number mode")
+
+    -- Stop event tap
+    safeStop(state.tap)
+    state.tap = nil
+
+    -- Delete all canvases
+    for _, canvas in ipairs(state.canvases) do
+        safeDelete(canvas)
     end
     state.canvases = {}
+
     state.numActive = false
 end
 
-local function enter_number_mode()
-    log("entered number mode")
+local function enterNumberMode()
+    log("Entering number mode")
 
-    local list = buildBadgeList()
-    local count = math.min(((CONFIG and CONFIG.maxBadges) or 35), #list or 0)
+    local screen = getFocusedScreen()
+    local windows = getWindowsOnCurrentSpace(screen)
+    local count = math.min((CONFIG and CONFIG.maxBadges) or DEFAULT_CONFIG.maxBadges, #windows)
+
     if count == 0 then
+        -- Retry once in case windows are still loading
         if state.firstBadgeRetry then
             state.firstBadgeRetry = false
-            exit_number_mode()
-            hs.timer.doAfter(0.12, function() enter_number_mode() end)
+            exitNumberMode()
+            hs.timer.doAfter(RETRY_DELAY, enterNumberMode)
             return
         else
             log("No windows to label")
-            exit_number_mode()
+            exitNumberMode()
             return
         end
     end
 
     state.firstBadgeRetry = true
     state.numActive = true
-    local pal = palette()
-    local currentWin = hs.window.focusedWindow()
-    local drawnFrames = {}
-    state.canvases = {}
 
-    -- Draw badges in order
+    local palette = getColorPalette()
+    local currentWindow = hs.window.focusedWindow()
+    local currentWindowId = currentWindow and currentWindow:id()
+    local drawnFrames = {}
+
+    -- Create badges for each window
+    state.canvases = {}
     for i = 1, count do
-        local w = list[i]
-        local isActive = (currentWin and w and w:id() == currentWin:id())
-        local badgeCanvas = select(1, makeBadge(w, i, pal, isActive, drawnFrames))
-        state.canvases[#state.canvases + 1] = badgeCanvas
+        local window = windows[i]
+        if window then
+            local isActive = (currentWindowId and window:id() == currentWindowId)
+            local badge = createBadge(window, i, palette, isActive, drawnFrames)
+            if badge then
+                table.insert(state.canvases, badge)
+            end
+        end
     end
 
-    -- Build key mapping
+    -- Build key mapping for quick access
     local keyMapping = {}
     for i = 1, count do
-        local char = string.lower(indexToChar(i))
-        keyMapping[char] = list[i]
+        local window = windows[i]
+        if window then
+            local char = string.lower(indexToChar(i))
+            keyMapping[char] = window
+        end
     end
 
-    -- Event tap for number/letter keys and Escape
-    state.tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(e)
-        -- Escape
-        if e:getKeyCode() == 53 then
-            exit_number_mode()
+    -- Setup event tap for keyboard input
+    state.tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(event)
+        -- Check for Escape key
+        if event:getKeyCode() == ESCAPE_KEYCODE then
+            exitNumberMode()
             return true
         end
 
-        local chars = e:getCharacters()
-        if not chars then return false end
+        -- Check for window selection keys
+        local chars = event:getCharacters()
+        if not chars then
+            return false
+        end
+
         local key = string.lower(chars)
-        local win = keyMapping[key]
+        local targetWindow = keyMapping[key]
 
-        if win then
-            exit_number_mode()
-            win:raise(); win:focus()
+        if targetWindow then
+            exitNumberMode()
+            targetWindow:raise()
+            targetWindow:focus()
             return true
         end
 
-        return false -- allow other keys to pass
+        -- Allow other keys to pass through
+        return false
     end)
-    if state.tap then
-        pcall(function()
-            local t = state.tap
-            if t and t.start then t:start() end
-        end)
-    end
+
+    safeStart(state.tap)
 end
 
 -- Public API
 
 function M.setup(config)
-    if state.configured then M.teardown() end
+    if state.configured then
+        M.teardown()
+    end
 
-    CONFIG                   = config or {}
-    LOG                      = not not (CONFIG and CONFIG.debug)
+    -- Merge config with defaults
+    CONFIG = config or {}
+    LOG = CONFIG.debug == true
 
-    CONFIG.maxBadges         = CONFIG.maxBadges or 35
-    CONFIG.badge             = CONFIG.badge or {}
-    CONFIG.badge.size        = CONFIG.badge.size or 28
-    CONFIG.badge.fontSize    = CONFIG.badge.fontSize or 15
-    CONFIG.badge.titleMaxW   = CONFIG.badge.titleMaxW or 440
-    CONFIG.badge.textYOffset = (CONFIG.badge.textYOffset ~= nil) and CONFIG.badge.textYOffset or -2
-    CONFIG.badge.padding     = CONFIG.badge.padding or 6
+    -- Apply defaults for missing values
+    CONFIG.maxBadges = CONFIG.maxBadges or DEFAULT_CONFIG.maxBadges
 
-    CONFIG.keys              = CONFIG.keys or {}
-    CONFIG.keys.mod          = CONFIG.keys.mod or {}
-    CONFIG.keys.num          = CONFIG.keys.num or "f20"
+    CONFIG.badge = CONFIG.badge or {}
+    CONFIG.badge.size = CONFIG.badge.size or DEFAULT_CONFIG.badge.size
+    CONFIG.badge.fontSize = CONFIG.badge.fontSize or DEFAULT_CONFIG.badge.fontSize
+    CONFIG.badge.titleMaxW = CONFIG.badge.titleMaxW or DEFAULT_CONFIG.badge.titleMaxW
+    CONFIG.badge.textYOffset = (CONFIG.badge.textYOffset ~= nil) and CONFIG.badge.textYOffset or
+        DEFAULT_CONFIG.badge.textYOffset
+    CONFIG.badge.padding = CONFIG.badge.padding or DEFAULT_CONFIG.badge.padding
 
-    state.hotkey             = hs.hotkey.bind(CONFIG.keys.mod, CONFIG.keys.num, function()
+    CONFIG.keys = CONFIG.keys or {}
+    CONFIG.keys.mod = CONFIG.keys.mod or DEFAULT_CONFIG.keys.mod
+    CONFIG.keys.num = CONFIG.keys.num or DEFAULT_CONFIG.keys.num
+
+    -- Bind hotkey
+    state.hotkey = hs.hotkey.bind(CONFIG.keys.mod, CONFIG.keys.num, function()
         if state.numActive then
-            exit_number_mode()
+            exitNumberMode()
         else
-            enter_number_mode()
+            enterNumberMode()
         end
     end)
 
-    state.configured         = true
-    log("window_quick_jump: setup complete")
+    state.configured = true
+    log("Setup complete")
 end
 
 function M.teardown()
-    if state.hotkey then
-        pcall(function()
-            local hk = state.hotkey
-            if hk and hk.delete then hk:delete() end
-        end)
-    end
+    -- Delete hotkey
+    safeDelete(state.hotkey)
     state.hotkey = nil
 
-    exit_number_mode()
+    -- Exit number mode if active
+    exitNumberMode()
 
     state.configured = false
-    log("window_quick_jump: teardown complete")
+    log("Teardown complete")
 end
 
 return M
