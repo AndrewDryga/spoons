@@ -69,8 +69,6 @@ spoon.WindowManager:configure({
 }):start()
 ```
 
----
-
 ## WindowQuickJump
 
 Instantly jump to any visible window by displaying keyboard badges (1-9, A-Z) on all windows.
@@ -106,8 +104,6 @@ spoon.WindowQuickJump:start()
 1. Press your hotkey (e.g., `Cmd+Alt+J`)
 2. Press the number/letter shown on the window you want
 3. Press `Escape` to cancel
-
----
 
 ## WindowCycle
 
@@ -146,8 +142,6 @@ spoon.WindowCycle:bindHotkeys({
     prev = {{"alt", "shift"}, "tab"}
 })
 ```
-
----
 
 ## WindowManager
 
@@ -241,8 +235,6 @@ osascript -e 'id of app "Safari"'
 # Output: com.apple.Safari
 ```
 
----
-
 ## 🔧 Advanced Usage
 
 ### Hyper Key Setup
@@ -264,17 +256,15 @@ spoon.WindowCycle:bindHotkeys({
 
 ### Function Key Setup
 
-For keyboards with extra function keys or using Karabiner-Elements:
-
 ```lua
 -- F13-F20 keys (often mapped from other keys)
 spoon.WindowQuickJump:bindHotkeys({
-    toggle = {{}, "f20"}  -- Caps Lock → F20
+    toggle = {{"cmd"}, "/"}
 })
 
 spoon.WindowCycle:bindHotkeys({
-    prev = {{}, "f18"},
-    next = {{}, "f19"}
+    prev = {{"cmd"}, ","},
+    next = {{"cmd"}, "."}
 })
 ```
 
@@ -287,8 +277,6 @@ spoon.WindowQuickJump.logger.level = "debug"
 spoon.WindowCycle.logger.level = "debug"
 spoon.WindowManager.debug = true
 ```
-
----
 
 ## 📋 Requirements
 
@@ -351,7 +339,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## ⭐ Show your support
 
 Give a ⭐️ if this project helped you!
-
----
 
 Made with ❤️ for the Hammerspoon community

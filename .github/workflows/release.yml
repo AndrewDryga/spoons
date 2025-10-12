@@ -58,8 +58,6 @@ jobs:
 
           # Create release notes with proper markdown
           cat > build/release-notes.md << 'ENDOFRELEASE'
-          ## v${{ steps.version.outputs.VERSION }}
-
           ### 📥 Installation
 
           1. Download the desired `.spoon.zip` file below
