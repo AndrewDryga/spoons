@@ -3,7 +3,7 @@ local hs = hs
 
 -- Configuration shared by modules
 local config = {
-    debug = true, -- enable verbose logging
+    debug = false, -- enable/disable verbose logging
 }
 
 -- It is useful to have a visible sign that Hammerspoon has (re)loaded its config
@@ -30,8 +30,8 @@ if config.debug then
     spoon.WindowCycle.logger.level = "debug"
 end
 spoon.WindowCycle:bindHotkeys({
-    prev = { { "cmd" }, "9" },
-    next = { { "cmd" }, "0" }
+    prev = { { "" }, "f18" },
+    next = { { "" }, "f19" }
 }):start()
 
 -- Load WindowQuickJump Spoon (F20 for badge jumping)
@@ -41,7 +41,7 @@ if config.debug then
     spoon.WindowQuickJump.logger.level = "debug"
 end
 spoon.WindowQuickJump:bindHotkeys({
-    toggle = { { "cmd" }, "8" }
+    toggle = { { "" }, "f20" }
 }):start()
 
 -- Declarative per-screen tiles/layouts and multiscreen orchestration
@@ -60,13 +60,13 @@ end
 -- Bundle IDs used across layouts
 -- You can get Bundle ID using `osascript -e 'id of app "Dash"'`
 local bundle_ids = {
-    zed    = "dev.zed.Zed",
-    warp   = "dev.warp.Warp-Stable",
-    chrome = "com.google.Chrome",
-    slack  = "com.tinyspeck.slackmacgap",
-    dash   = "com.kapeli.dashdoc",
-    chat   = "com.openai.chat",
-    music  = "com.apple.Music",
+    zed         = "dev.zed.Zed",
+    warp        = "dev.warp.Warp-Stable",
+    chrome      = "com.google.Chrome",
+    slack       = "com.tinyspeck.slackmacgap",
+    dash        = "com.kapeli.dashdoc",
+    chatgpt     = "com.openai.chat",
+    apple_music = "com.apple.Music",
 }
 
 -- Per-screen declarative configuration:
@@ -90,7 +90,7 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Bottom Left"]  = { bundle_ids.warp },
                         ["Top Right"]    = { bundle_ids.chrome },
-                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.chat, bundle_ids.music },
+                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.chatgpt, bundle_ids.apple_music },
                     },
                 },
             },
@@ -104,20 +104,21 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.zed },
                         ["Bottom Left"]  = { bundle_ids.warp },
-                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.chatgpt, bundle_ids.apple_music, bundle_ids.dash },
                     },
                 },
             },
+            -- Used for testing
             -- {
             --     name = "Browser",
             --     hotkey = { mods = { "cmd" }, key = "2" },
             --     focusApp = bundle_ids.chrome,
             --     space_layouts = {
             --         [1] = {
-            --             ["Center"]       = { bundle_ids.music },
+            --             ["Center"]       = { bundle_ids.apple_music },
             --             ["Top Left"]     = { bundle_ids.slack },
             --             ["Top Right"]    = { bundle_ids.dash },
-            --             ["Bottom Right"] = { bundle_ids.chat },
+            --             ["Bottom Right"] = { bundle_ids.chatgpt },
             --         },
 
             --         [2] = { bundle_ids.chrome },
@@ -135,7 +136,7 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.chrome },
                         ["Bottom Left"]  = { bundle_ids.zed },
-                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.chatgpt, bundle_ids.apple_music, bundle_ids.dash },
                     },
                 },
             },
@@ -156,10 +157,10 @@ local screens_config = {
                 focusApp = bundle_ids.chrome,
                 space_layouts = {
                     [1] = {
-                        ["Center"]       = { bundle_ids.music },
+                        ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chat },
+                        ["Bottom Right"] = { bundle_ids.chatgpt },
                     },
 
                     [2] = { bundle_ids.chrome },
@@ -173,10 +174,10 @@ local screens_config = {
                 focusApp = bundle_ids.zed,
                 space_layouts = {
                     [1] = {
-                        ["Center"]       = { bundle_ids.music },
+                        ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chat },
+                        ["Bottom Right"] = { bundle_ids.chatgpt },
                     },
 
                     [2] = { bundle_ids.chrome },
@@ -190,28 +191,15 @@ local screens_config = {
                 focusApp = bundle_ids.warp,
                 space_layouts = {
                     [1] = {
-                        ["Center"]       = { bundle_ids.music },
+                        ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chat },
+                        ["Bottom Right"] = { bundle_ids.chatgpt },
                     },
 
                     [2] = { bundle_ids.chrome },
                     [3] = { bundle_ids.zed },
                     [4] = { bundle_ids.warp },
-                },
-            },
-            {
-                name = "Terminal2",
-                hotkey = { mods = { "cmd" }, key = "4" },
-                focusApp = bundle_ids.slack,
-                space_layouts = {
-                    [1] = {
-                        ["Center"]       = { bundle_ids.warp },
-                        ["Top Left"]     = { bundle_ids.slack },
-                        ["Top Right"]    = { bundle_ids.chrome, bundle_ids.zed },
-                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
-                    },
                 },
             },
         },
@@ -224,7 +212,7 @@ spoon.WindowManager:configure({
     -- Default screen will be used if not other screen matches
     defaultScreenName = "Built-in Retina Display",
     debug = config.debug,
-    notifications = false, -- Enable visual notifications (set to false to disable)
+    notifications = false, -- Enable/disable visual notifications (set to false to disable)
     startup_delay = 0.2,   -- Delay before auto-applying layout on startup (seconds)
     profiles = screens_config,
 }):start()
