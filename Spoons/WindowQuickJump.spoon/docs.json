@@ -1,0 +1,264 @@
+[
+  {
+    "Command": [],
+    "Constant": [],
+    "Constructor": [],
+    "Deprecated": [],
+    "Field": [],
+    "Function": [],
+    "Method": [
+      {
+        "def": "WindowQuickJump:init()",
+        "desc": "Initialize the WindowQuickJump spoon",
+        "doc": "Initialize the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object",
+        "name": "init",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:start()",
+        "desc": "Start the WindowQuickJump spoon",
+        "doc": "Start the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * This method initializes the spoon but doesn't show badges\n * Use the hotkey to toggle badge visibility",
+        "name": "start",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:stop()",
+        "desc": "Stop the WindowQuickJump spoon",
+        "doc": "Stop the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Hides any visible badges and unbinds hotkeys",
+        "name": "stop",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowQuickJump",
+        "doc": "Bind hotkeys for WindowQuickJump\n\nParameters:\n * mapping - A table with hotkey mappings:\n   * toggle - hotkey to show/hide window badges (e.g., {{\"cmd\", \"alt\"}, \"j\"})\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Only the 'toggle' key is used to show/hide badges\n * While badges are shown, press number/letter keys to jump to windows\n * Press Escape to cancel",
+        "name": "bindHotkeys",
+        "parameters": [
+          " * mapping - A table with hotkey mappings"
+        ],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:toggle()",
+        "desc": "Toggle the visibility of window badges",
+        "doc": "Toggle the visibility of window badges\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Shows numbered/lettered badges on all visible windows\n * Badges use keys 1-9 and A-Z for up to 35 windows\n * Press the corresponding key to focus that window\n * Press Escape to cancel",
+        "name": "toggle",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:toggle()",
+        "stripped_doc": "",
+        "type": "Method"
+      }
+    ],
+    "Variable": [
+      {
+        "def": "WindowQuickJump.maxWindows",
+        "desc": "Maximum number of windows to show badges for",
+        "doc": "Maximum number of windows to show badges for (default: 35)",
+        "name": "maxWindows",
+        "signature": "WindowQuickJump.maxWindows",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgeSize",
+        "desc": "Size of the badge circle in pixels",
+        "doc": "Size of the badge circle in pixels (default: 28)",
+        "name": "badgeSize",
+        "signature": "WindowQuickJump.badgeSize",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgeFontSize",
+        "desc": "Font size for badge labels",
+        "doc": "Font size for badge labels (default: 15)",
+        "name": "badgeFontSize",
+        "signature": "WindowQuickJump.badgeFontSize",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.titleMaxWidth",
+        "desc": "Maximum width for window title display",
+        "doc": "Maximum width for window title display in pixels (default: 440)",
+        "name": "titleMaxWidth",
+        "signature": "WindowQuickJump.titleMaxWidth",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgePadding",
+        "desc": "Padding from window edges for badge placement",
+        "doc": "Padding from window edges for badge placement in pixels (default: 6)",
+        "name": "badgePadding",
+        "signature": "WindowQuickJump.badgePadding",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.logger",
+        "desc": "Logger instance for debugging",
+        "doc": "Logger instance for debugging. Set logger.level to \"debug\" for verbose output.",
+        "name": "logger",
+        "signature": "WindowQuickJump.logger",
+        "stripped_doc": "",
+        "type": "Variable"
+      }
+    ],
+    "desc": "Window Quick Jump — numeric/alpha badges to quickly change focus between windows",
+    "doc": "Window Quick Jump — numeric/alpha badges to quickly change focus between windows\n\nThis Spoon provides a visual method to quickly switch between windows by showing\nkeyboard badges (1-9, A-Z) on all visible windows. Press the hotkey to show badges,\nthen press the corresponding key to focus that window.\n\nDownload: [https://github.com/AndrewDryga/spoons/raw/main/WindowQuickJump.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowQuickJump.spoon.zip)\n\nFeatures:\n * Visual badges with numbers and letters for up to 35 windows\n * Smart positioning to prevent badge overlap\n * Dark mode support with automatic theme detection\n * Active window highlighting\n * Window title display with app names\n * Minimized and hidden windows are automatically skipped\n\nExample configuration:\n```lua\nhs.loadSpoon(\"WindowQuickJump\")\n\n-- Customize appearance (optional)\nspoon.WindowQuickJump.maxWindows = 35      -- Maximum windows to badge\nspoon.WindowQuickJump.badgeSize = 28       -- Badge circle size\nspoon.WindowQuickJump.badgeFontSize = 15   -- Font size\nspoon.WindowQuickJump.titleMaxWidth = 440  -- Max title width\nspoon.WindowQuickJump.badgePadding = 6     -- Edge padding\n\n-- Bind hotkey\nspoon.WindowQuickJump:bindHotkeys({\n    toggle = {{\"cmd\", \"alt\"}, \"j\"}\n})\n\nspoon.WindowQuickJump:start()\n```\n\nUsage:\n1. Press your hotkey (e.g., Cmd+Alt+J) to show badges\n2. Press the number or letter shown on the window you want\n3. Press Escape to cancel without switching",
+    "items": [
+      {
+        "def": "WindowQuickJump:init()",
+        "desc": "Initialize the WindowQuickJump spoon",
+        "doc": "Initialize the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object",
+        "name": "init",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:start()",
+        "desc": "Start the WindowQuickJump spoon",
+        "doc": "Start the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * This method initializes the spoon but doesn't show badges\n * Use the hotkey to toggle badge visibility",
+        "name": "start",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:stop()",
+        "desc": "Stop the WindowQuickJump spoon",
+        "doc": "Stop the WindowQuickJump spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Hides any visible badges and unbinds hotkeys",
+        "name": "stop",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowQuickJump",
+        "doc": "Bind hotkeys for WindowQuickJump\n\nParameters:\n * mapping - A table with hotkey mappings:\n   * toggle - hotkey to show/hide window badges (e.g., {{\"cmd\", \"alt\"}, \"j\"})\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Only the 'toggle' key is used to show/hide badges\n * While badges are shown, press number/letter keys to jump to windows\n * Press Escape to cancel",
+        "name": "bindHotkeys",
+        "parameters": [
+          " * mapping - A table with hotkey mappings"
+        ],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump:toggle()",
+        "desc": "Toggle the visibility of window badges",
+        "doc": "Toggle the visibility of window badges\n\nParameters:\n * None\n\nReturns:\n * The WindowQuickJump object\n\nNotes:\n * Shows numbered/lettered badges on all visible windows\n * Badges use keys 1-9 and A-Z for up to 35 windows\n * Press the corresponding key to focus that window\n * Press Escape to cancel",
+        "name": "toggle",
+        "parameters": [],
+        "returns": [
+          "The WindowQuickJump object"
+        ],
+        "signature": "WindowQuickJump:toggle()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowQuickJump.maxWindows",
+        "desc": "Maximum number of windows to show badges for",
+        "doc": "Maximum number of windows to show badges for (default: 35)",
+        "name": "maxWindows",
+        "signature": "WindowQuickJump.maxWindows",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgeSize",
+        "desc": "Size of the badge circle in pixels",
+        "doc": "Size of the badge circle in pixels (default: 28)",
+        "name": "badgeSize",
+        "signature": "WindowQuickJump.badgeSize",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgeFontSize",
+        "desc": "Font size for badge labels",
+        "doc": "Font size for badge labels (default: 15)",
+        "name": "badgeFontSize",
+        "signature": "WindowQuickJump.badgeFontSize",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.titleMaxWidth",
+        "desc": "Maximum width for window title display",
+        "doc": "Maximum width for window title display in pixels (default: 440)",
+        "name": "titleMaxWidth",
+        "signature": "WindowQuickJump.titleMaxWidth",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.badgePadding",
+        "desc": "Padding from window edges for badge placement",
+        "doc": "Padding from window edges for badge placement in pixels (default: 6)",
+        "name": "badgePadding",
+        "signature": "WindowQuickJump.badgePadding",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowQuickJump.logger",
+        "desc": "Logger instance for debugging",
+        "doc": "Logger instance for debugging. Set logger.level to \"debug\" for verbose output.",
+        "name": "logger",
+        "signature": "WindowQuickJump.logger",
+        "stripped_doc": "",
+        "type": "Variable"
+      }
+    ],
+    "name": "WindowQuickJump",
+    "stripped_doc": "",
+    "submodules": [],
+    "type": "Module"
+  }
+]

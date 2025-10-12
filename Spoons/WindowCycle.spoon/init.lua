@@ -1,23 +1,24 @@
--- window_cycle.lua
--- Window/Space Cycler — Snappy & Production-Ready
---
--- API:
---   local cycle = require("window_cycle")
---   cycle.setup(config)   -- binds hotkeys
---   cycle.teardown()      -- unbinds hotkeys
---
--- Expects config keys:
---   config.debug     : boolean
---   config.lockMs    : number (debounce ms)
---   config.hopSettle : number (seconds to settle after space hop)
---   config.keys.mod  : table (modifier keys)
---   config.keys.prev : string (e.g., "f18")
---   config.keys.next : string (e.g., "f19")
+--- === WindowCycle ===
+---
+--- Window/Space Cycler — Snappy & Production-Ready
+---
+--- Download: [https://github.com/AndrewDryga/spoons/raw/main/WindowCycle.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowCycle.spoon.zip)
+
+local obj = {}
+obj.__index = obj
+
+-- Metadata
+obj.name = "WindowCycle"
+obj.version = "1.0.0"
+obj.author = "Andrew Dryga"
+obj.homepage = "https://github.com/AndrewDryga/spoons"
+obj.license = "MIT - https://opensource.org/licenses/MIT"
 
 ---@diagnostic disable-next-line: undefined-global, lowercase-global
 hs = hs or {}
 
-local M = {}
+-- Logger
+obj.logger = hs.logger.new('WindowCycle')
 
 -- Constants
 local MIN_WINDOW_SIZE = 8
@@ -28,9 +29,9 @@ local DEFAULT_CONFIG = {
     lockMs = 70,
     hopSettle = 0.1,
     keys = {
-        mod = { "cmd" },
-        prev = "9",
-        next = "0",
+        mod = {},
+        prev = "f18",
+        next = "f19",
     },
 }
 
@@ -252,27 +253,33 @@ local function hopToSpace(direction, preferredPosition)
 
     local targetSpaceId = allSpaces[targetIndex]
 
-    -- Determine which window to focus
-    local settleTime = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
-    hs.timer.doAfter(settleTime, function()
-        local windows = getWindowsOnCurrentSpace(screen)
-        local targetWindow = nil
+    -- Navigate to space and then focus the appropriate window
+    local ok, err = pcall(function()
+        hs.spaces.gotoSpace(targetSpaceId)
 
-        if windows and #windows > 0 then
-            if preferredPosition == "first" then
-                targetWindow = windows[1]
-            elseif preferredPosition == "last" then
-                targetWindow = windows[#windows]
+        local settleTime = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
+        hs.timer.doAfter(settleTime, function()
+            local windows = getWindowsOnCurrentSpace(screen)
+            local targetWindow = nil
+
+            if windows and #windows > 0 then
+                if preferredPosition == "first" then
+                    targetWindow = windows[1]
+                elseif preferredPosition == "last" then
+                    targetWindow = windows[#windows]
+                end
             end
-        end
 
-        if targetWindow and targetWindow.raise and targetWindow.focus then
-            targetWindow:raise()
-            targetWindow:focus()
-        end
+            if targetWindow and targetWindow.raise and targetWindow.focus then
+                targetWindow:raise()
+                targetWindow:focus()
+            end
+        end)
     end)
 
-    navigateToSpace(targetSpaceId, nil)
+    if not ok then
+        log("Failed to hop to space:", err)
+    end
 end
 
 -- Window cycling logic
@@ -354,9 +361,10 @@ local function bindHotkeys()
     -- Bind hotkeys
     if hs.hotkey and hs.hotkey.bind then
         -- Previous window/space
-        if CONFIG.keys and CONFIG.keys.mod and CONFIG.keys.prev then
+        if CONFIG.keys and CONFIG.keys.prev then
+            local mods = CONFIG.keys.prevMods or CONFIG.keys.mod or {}
             local prevHotkey = hs.hotkey.bind(
-                CONFIG.keys.mod,
+                mods,
                 CONFIG.keys.prev,
                 cyclePrevDebounced
             )
@@ -366,9 +374,10 @@ local function bindHotkeys()
         end
 
         -- Next window/space
-        if CONFIG.keys and CONFIG.keys.mod and CONFIG.keys.next then
+        if CONFIG.keys and CONFIG.keys.next then
+            local mods = CONFIG.keys.nextMods or CONFIG.keys.mod or {}
             local nextHotkey = hs.hotkey.bind(
-                CONFIG.keys.mod,
+                mods,
                 CONFIG.keys.next,
                 cycleNextDebounced
             )
@@ -379,12 +388,11 @@ local function bindHotkeys()
     end
 end
 
--- Public API
-
-function M.setup(config)
+-- Original module setup function
+local function setup(config)
     -- If already configured, teardown and re-bind
     if state.configured then
-        M.teardown()
+        teardown()
     end
 
     -- Merge config with defaults
@@ -405,7 +413,7 @@ function M.setup(config)
     log("Setup complete")
 end
 
-function M.teardown()
+local function teardown()
     -- Delete all hotkeys
     for name, hotkey in pairs(state.hotkeys) do
         safeDelete(hotkey)
@@ -417,4 +425,46 @@ function M.teardown()
     log("Teardown complete")
 end
 
-return M
+-- Spoon API
+function obj:init()
+    return self
+end
+
+function obj:start()
+    setup({
+        debug = self.debug or false,
+        lockMs = self.debounceMs or DEFAULT_CONFIG.lockMs,
+        hopSettle = self.spaceHopDelay or DEFAULT_CONFIG.hopSettle,
+        keys = self._keys or DEFAULT_CONFIG.keys
+    })
+    return self
+end
+
+function obj:stop()
+    teardown()
+    return self
+end
+
+function obj:bindHotkeys(mapping)
+    if mapping then
+        self._keys = self._keys or {}
+        if mapping.prev then
+            local mods, key = table.unpack(mapping.prev)
+            self._keys.prevMods = mods
+            self._keys.prev = key
+        end
+        if mapping.next then
+            local mods, key = table.unpack(mapping.next)
+            self._keys.nextMods = mods
+            self._keys.next = key
+        end
+    end
+    return self
+end
+
+-- Public configuration variables (for compatibility)
+obj.debug = false
+obj.debounceMs = DEFAULT_CONFIG.lockMs
+obj.spaceHopDelay = DEFAULT_CONFIG.hopSettle
+
+return obj

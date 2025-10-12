@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Thumbnails
+Thumbs.db
+ehthumbs.db
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+*.orig
+
+# Logs
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Hammerspoon
+*.spoon.zip
+build/
+dist/
+
+# Development
+.luacheckrc
+.luacov
+luacov.*.out
+
+# Personal configuration (if any)
+personal/
+local/
+*.local.*
+
+# Backup files
+*.backup
+*_backup.*

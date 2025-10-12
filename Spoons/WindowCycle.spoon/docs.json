@@ -1,0 +1,236 @@
+[
+  {
+    "Command": [],
+    "Constant": [],
+    "Constructor": [],
+    "Deprecated": [],
+    "Field": [],
+    "Function": [],
+    "Method": [
+      {
+        "def": "WindowCycle:init()",
+        "desc": "Initialize the WindowCycle spoon",
+        "doc": "Initialize the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object",
+        "name": "init",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:start()",
+        "desc": "Start the WindowCycle spoon",
+        "doc": "Start the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Begins monitoring for window cycling hotkeys\n * Automatically handles space switching when cycling across space boundaries",
+        "name": "start",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:stop()",
+        "desc": "Stop the WindowCycle spoon",
+        "doc": "Stop the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Unbinds all hotkeys and stops window cycling",
+        "name": "stop",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowCycle",
+        "doc": "Bind hotkeys for WindowCycle\n\nParameters:\n * mapping - A table with hotkey mappings:\n   * prev - hotkey to cycle to previous window (e.g., {{\"cmd\", \"alt\"}, \"left\"})\n   * next - hotkey to cycle to next window (e.g., {{\"cmd\", \"alt\"}, \"right\"})\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Windows are ordered left-to-right, top-to-bottom\n * Automatically switches spaces when cycling past the first/last window\n * Debouncing prevents accidental rapid cycling",
+        "name": "bindHotkeys",
+        "parameters": [
+          " * mapping - A table with hotkey mappings"
+        ],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:cycleNext()",
+        "desc": "Cycle to the next window",
+        "doc": "Cycle to the next window\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Focuses the next window in left-to-right, top-to-bottom order\n * Automatically moves to the next space if at the last window on current space",
+        "name": "cycleNext",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:cycleNext()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:cyclePrev()",
+        "desc": "Cycle to the previous window",
+        "doc": "Cycle to the previous window\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Focuses the previous window in left-to-right, top-to-bottom order\n * Automatically moves to the previous space if at the first window on current space",
+        "name": "cyclePrev",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:cyclePrev()",
+        "stripped_doc": "",
+        "type": "Method"
+      }
+    ],
+    "Variable": [
+      {
+        "def": "WindowCycle.debounceMs",
+        "desc": "Debounce delay in milliseconds",
+        "doc": "Debounce delay in milliseconds to prevent rapid cycling (default: 70)",
+        "name": "debounceMs",
+        "signature": "WindowCycle.debounceMs",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowCycle.spaceHopDelay",
+        "desc": "Delay after space switch in seconds",
+        "doc": "Delay after space switch in seconds before continuing to cycle (default: 0.1)",
+        "name": "spaceHopDelay",
+        "signature": "WindowCycle.spaceHopDelay",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowCycle.logger",
+        "desc": "Logger instance for debugging",
+        "doc": "Logger instance for debugging. Set logger.level to \"debug\" for verbose output.",
+        "name": "logger",
+        "signature": "WindowCycle.logger",
+        "stripped_doc": "",
+        "type": "Variable"
+      }
+    ],
+    "desc": "Window/Space Cycler — Snappy & Production-Ready",
+    "doc": "Window/Space Cycler — Snappy & Production-Ready\n\nThis Spoon provides fast window cycling with automatic space switching when reaching\nspace boundaries. Windows are ordered left-to-right, top-to-bottom for intuitive navigation.\n\nDownload: [https://github.com/AndrewDryga/spoons/raw/main/WindowCycle.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowCycle.spoon.zip)\n\nFeatures:\n * Smart window ordering based on position (left-to-right, top-to-bottom)\n * Automatic space switching at boundaries\n * Debounced input to prevent accidental rapid switching\n * Window filtering to skip minimized and hidden windows\n * Seamless space wrapping for continuous navigation\n\nExample configuration:\n```lua\nhs.loadSpoon(\"WindowCycle\")\n\n-- Customize timing (optional)\nspoon.WindowCycle.debounceMs = 70        -- Debounce delay (milliseconds)\nspoon.WindowCycle.spaceHopDelay = 0.1    -- Delay after space switch (seconds)\n\n-- Bind hotkeys\nspoon.WindowCycle:bindHotkeys({\n    prev = {{\"cmd\", \"alt\"}, \"left\"},\n    next = {{\"cmd\", \"alt\"}, \"right\"}\n})\n\nspoon.WindowCycle:start()\n```\n\nAlt-Tab Style Example:\n```lua\n-- Windows/Linux-style Alt-Tab\nspoon.WindowCycle:bindHotkeys({\n    next = {{\"alt\"}, \"tab\"},\n    prev = {{\"alt\", \"shift\"}, \"tab\"}\n})\n```",
+    "items": [
+      {
+        "def": "WindowCycle:init()",
+        "desc": "Initialize the WindowCycle spoon",
+        "doc": "Initialize the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object",
+        "name": "init",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:start()",
+        "desc": "Start the WindowCycle spoon",
+        "doc": "Start the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Begins monitoring for window cycling hotkeys\n * Automatically handles space switching when cycling across space boundaries",
+        "name": "start",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:stop()",
+        "desc": "Stop the WindowCycle spoon",
+        "doc": "Stop the WindowCycle spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Unbinds all hotkeys and stops window cycling",
+        "name": "stop",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowCycle",
+        "doc": "Bind hotkeys for WindowCycle\n\nParameters:\n * mapping - A table with hotkey mappings:\n   * prev - hotkey to cycle to previous window (e.g., {{\"cmd\", \"alt\"}, \"left\"})\n   * next - hotkey to cycle to next window (e.g., {{\"cmd\", \"alt\"}, \"right\"})\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Windows are ordered left-to-right, top-to-bottom\n * Automatically switches spaces when cycling past the first/last window\n * Debouncing prevents accidental rapid cycling",
+        "name": "bindHotkeys",
+        "parameters": [
+          " * mapping - A table with hotkey mappings"
+        ],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:cycleNext()",
+        "desc": "Cycle to the next window",
+        "doc": "Cycle to the next window\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Focuses the next window in left-to-right, top-to-bottom order\n * Automatically moves to the next space if at the last window on current space",
+        "name": "cycleNext",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:cycleNext()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle:cyclePrev()",
+        "desc": "Cycle to the previous window",
+        "doc": "Cycle to the previous window\n\nParameters:\n * None\n\nReturns:\n * The WindowCycle object\n\nNotes:\n * Focuses the previous window in left-to-right, top-to-bottom order\n * Automatically moves to the previous space if at the first window on current space",
+        "name": "cyclePrev",
+        "parameters": [],
+        "returns": [
+          "The WindowCycle object"
+        ],
+        "signature": "WindowCycle:cyclePrev()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowCycle.debounceMs",
+        "desc": "Debounce delay in milliseconds",
+        "doc": "Debounce delay in milliseconds to prevent rapid cycling (default: 70)",
+        "name": "debounceMs",
+        "signature": "WindowCycle.debounceMs",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowCycle.spaceHopDelay",
+        "desc": "Delay after space switch in seconds",
+        "doc": "Delay after space switch in seconds before continuing to cycle (default: 0.1)",
+        "name": "spaceHopDelay",
+        "signature": "WindowCycle.spaceHopDelay",
+        "stripped_doc": "",
+        "type": "Variable"
+      },
+      {
+        "def": "WindowCycle.logger",
+        "desc": "Logger instance for debugging",
+        "doc": "Logger instance for debugging. Set logger.level to \"debug\" for verbose output.",
+        "name": "logger",
+        "signature": "WindowCycle.logger",
+        "stripped_doc": "",
+        "type": "Variable"
+      }
+    ],
+    "name": "WindowCycle",
+    "stripped_doc": "",
+    "submodules": [],
+    "type": "Module"
+  }
+]

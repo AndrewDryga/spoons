@@ -1,3 +1,19 @@
+--- === WindowManager ===
+---
+--- Advanced window manager with tiling and fullscreen management
+---
+--- Download: [https://github.com/AndrewDryga/spoons/raw/main/WindowManager.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowManager.spoon.zip)
+
+local obj = {}
+obj.__index = obj
+
+-- Metadata
+obj.name = "WindowManager"
+obj.version = "1.0.0"
+obj.author = "Andrew Dryga"
+obj.homepage = "https://github.com/AndrewDryga/spoons"
+obj.license = "MIT - https://opensource.org/licenses/MIT"
+
 -- Window manager for Hammerspoon: tiling + deterministic fullscreen with minimal hops.
 -- Refactored version with improved robustness, timeout handling, and user experience
 ---@diagnostic disable-next-line: undefined-global, lowercase-global
@@ -1983,4 +1999,116 @@ function M.status()
     return table.concat(report, "\n")
 end
 
-return M
+--------------------------------------------------------------------------------
+-- Spoon API Wrapper
+--------------------------------------------------------------------------------
+
+--- WindowManager:init()
+--- Method
+--- Initialize the WindowManager spoon
+---
+--- Parameters:
+---  * None
+---
+--- Returns:
+---  * The WindowManager object
+function obj:init()
+    return self
+end
+
+--- WindowManager:configure(config)
+--- Method
+--- Configure the WindowManager with profiles and layouts
+---
+--- Parameters:
+---  * config - A table containing configuration with:
+---    * debug - boolean, enable debug logging (default: false)
+---    * notifications - boolean, enable notifications (default: true)
+---    * profiles - table of screen name to profile mappings, each profile contains:
+---      * tiles - table of tile definitions with anchor, w/h or wPct/hPct
+---      * layouts - array of layout definitions with:
+---        * name - string, layout name
+---        * hotkey - table with mods and key for hotkey binding
+---        * space_layouts - table with space index to app bundle ID mappings
+---        * focusApp - optional bundle ID of app to focus after layout
+---
+--- Returns:
+---  * The WindowManager object
+function obj:configure(config)
+    self._config = config
+    return self
+end
+
+--- WindowManager:start()
+--- Method
+--- Start the WindowManager
+---
+--- Parameters:
+---  * None
+---
+--- Returns:
+---  * The WindowManager object
+function obj:start()
+    M.setup(self._config)
+    return self
+end
+
+--- WindowManager:stop()
+--- Method
+--- Stop the WindowManager
+---
+--- Parameters:
+---  * None
+---
+--- Returns:
+---  * The WindowManager object
+function obj:stop()
+    M.teardown()
+    return self
+end
+
+--- WindowManager:bindHotkeys(mapping)
+--- Method
+--- Bind hotkeys for WindowManager
+---
+--- Parameters:
+---  * mapping - A table with hotkey mappings (currently unused, hotkeys are defined in layouts)
+---
+--- Returns:
+---  * The WindowManager object
+---
+--- Notes:
+---  * This method exists for API consistency but hotkeys are actually defined in the layout configuration
+function obj:bindHotkeys(mapping)
+    -- Hotkeys are defined in the layout configuration
+    return self
+end
+
+--- WindowManager:apply_layout(layout)
+--- Method
+--- Apply a specific layout
+---
+--- Parameters:
+---  * layout - A layout table with space_layouts specification
+---
+--- Returns:
+---  * The WindowManager object
+function obj:apply_layout(layout)
+    M.apply_layout(layout)
+    return self
+end
+
+--- WindowManager:status()
+--- Method
+--- Get the current status of the WindowManager
+---
+--- Parameters:
+---  * None
+---
+--- Returns:
+---  * A string describing the current status
+function obj:status()
+    return M.status()
+end
+
+return obj

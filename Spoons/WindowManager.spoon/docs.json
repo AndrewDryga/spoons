@@ -1,0 +1,175 @@
+[
+  {
+    "Command": [],
+    "Constant": [],
+    "Constructor": [],
+    "Deprecated": [],
+    "Field": [],
+    "Function": [],
+    "Method": [
+      {
+        "def": "WindowManager:init()",
+        "desc": "Initialize the WindowManager spoon",
+        "doc": "Initialize the WindowManager spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object",
+        "name": "init",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:configure(config)",
+        "desc": "Configure the WindowManager with profiles and layouts",
+        "doc": "Configure the WindowManager with profiles and layouts\n\nParameters:\n * config - A table containing configuration:\n   * debug - boolean, enable debug logging (default: false)\n   * notifications - boolean, enable notifications (default: true)\n   * profiles - table of screen name to profile mappings, where each profile contains:\n     * tiles - table of tile definitions, each tile having:\n       * anchor - string, position anchor like \"topleft\", \"center\", \"bottomright\" etc.\n       * w, h - numbers, absolute width and height in pixels\n       * OR wPct, hPct - numbers, percentage of screen (0.0 to 1.0)\n     * layouts - array of layout definitions, each containing:\n       * name - string, layout name\n       * hotkey - table with 'mods' array and 'key' string for hotkey binding\n       * space_layouts - table with numeric indices representing spaces:\n         * [1] - table of tileName to bundle ID(s) mappings for tiling\n         * [2+] - arrays of bundle IDs for fullscreen spaces\n       * focusApp - optional string, bundle ID of app to focus after layout\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Screen names must match exactly as reported by macOS (e.g., \"Built-in Retina Display\")\n * Bundle identifiers can be found using: osascript -e 'id of app \"AppName\"'\n * Space 1 is always used for tiling, spaces 2+ for fullscreen apps",
+        "name": "configure",
+        "parameters": [" * config - A table containing configuration"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:configure(config)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:start()",
+        "desc": "Start the WindowManager",
+        "doc": "Start the WindowManager\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Must be called after configure() to begin monitoring screens and binding hotkeys\n * Automatically detects screen changes and switches profiles\n * Enables space caching for improved performance",
+        "name": "start",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:stop()",
+        "desc": "Stop the WindowManager",
+        "doc": "Stop the WindowManager\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Stops all screen and space monitoring\n * Unbinds all hotkeys\n * Cleans up any active operations",
+        "name": "stop",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowManager",
+        "doc": "Bind hotkeys for WindowManager\n\nParameters:\n * mapping - A table with hotkey mappings (currently unused)\n\nReturns:\n * The WindowManager object\n\nNotes:\n * This method exists for API consistency\n * Hotkeys are actually defined in the layout configuration within each profile\n * Each layout can have its own hotkey binding",
+        "name": "bindHotkeys",
+        "parameters": [" * mapping - A table with hotkey mappings"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:apply_layout(layout)",
+        "desc": "Apply a specific layout",
+        "doc": "Apply a specific layout\n\nParameters:\n * layout - A layout table with space_layouts specification:\n   * name - string, layout name (optional)\n   * space_layouts - table with numeric indices:\n     * [1] - tile mappings\n     * [2+] - fullscreen app lists\n   * focusApp - optional string, bundle ID to focus\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Can be called programmatically to apply a layout without using hotkeys\n * Will launch apps if they're not running\n * Cancels any currently running layout application\n * Normalizes existing fullscreen spaces before applying new layout",
+        "name": "apply_layout",
+        "parameters": [" * layout - A layout table"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:apply_layout(layout)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:status()",
+        "desc": "Get the current status of the WindowManager",
+        "doc": "Get the current status of the WindowManager\n\nParameters:\n * None\n\nReturns:\n * A string describing the current status including:\n   * Current screen name\n   * Whether a layout is being applied\n   * Number of active hotkeys\n   * Screen and space watcher status\n   * Number of active operations\n   * Space cache details",
+        "name": "status",
+        "parameters": [],
+        "returns": ["A string describing the current status"],
+        "signature": "WindowManager:status()",
+        "stripped_doc": "",
+        "type": "Method"
+      }
+    ],
+    "Variable": [],
+    "desc": "Advanced window manager with tiling and fullscreen management",
+    "doc": "Advanced window manager with tiling and fullscreen management\n\nThis Spoon provides advanced window management capabilities including:\n* Per-screen layout profiles with automatic switching\n* Tiling support with customizable tile definitions\n* Fullscreen space management with deterministic ordering\n* App auto-launch to ensure required apps are running\n* Layout hotkeys for quick layout switching\n* Space caching for improved performance\n\nDownload: [https://github.com/AndrewDryga/spoons/raw/main/WindowManager.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowManager.spoon.zip)\n\nConfiguration Example:\n```lua\nhs.loadSpoon(\"WindowManager\")\nspoon.WindowManager:configure({\n    debug = false,\n    notifications = true,\n    profiles = {\n        [\"Built-in Retina Display\"] = {\n            tiles = {\n                left = { anchor = \"left\", wPct = 0.5, hPct = 1 },\n                right = { anchor = \"right\", wPct = 0.5, hPct = 1 },\n                topleft = { anchor = \"topleft\", wPct = 0.5, hPct = 0.5 },\n                topright = { anchor = \"topright\", wPct = 0.5, hPct = 0.5 },\n                bottomleft = { anchor = \"bottomleft\", wPct = 0.5, hPct = 0.5 },\n                bottomright = { anchor = \"bottomright\", wPct = 0.5, hPct = 0.5 }\n            },\n            layouts = {\n                {\n                    name = \"Development\",\n                    hotkey = { mods = {\"cmd\", \"alt\"}, key = \"1\" },\n                    space_layouts = {\n                        [1] = {\n                            left = \"com.googlecode.iterm2\",\n                            right = \"com.microsoft.VSCode\"\n                        },\n                        [2] = { \"com.google.Chrome\" },\n                        [3] = { \"com.tinyspeck.slackmacgap\" }\n                    },\n                    focusApp = \"com.microsoft.VSCode\"\n                },\n                {\n                    name = \"Communication\",\n                    hotkey = { mods = {\"cmd\", \"alt\"}, key = \"2\" },\n                    space_layouts = {\n                        [1] = {\n                            left = \"com.tinyspeck.slackmacgap\",\n                            topright = \"com.apple.mail\",\n                            bottomright = \"com.apple.iCal\"\n                        }\n                    }\n                }\n            }\n        },\n        [\"LG UltraFine\"] = {\n            tiles = {\n                wide = { anchor = \"left\", wPct = 0.7, hPct = 1 },\n                sidebar = { anchor = \"right\", wPct = 0.3, hPct = 1 },\n                tophalf = { anchor = \"top\", wPct = 1, hPct = 0.5 },\n                bottomhalf = { anchor = \"bottom\", wPct = 1, hPct = 0.5 }\n            },\n            layouts = {\n                {\n                    name = \"Coding\",\n                    hotkey = { mods = {\"cmd\", \"alt\"}, key = \"1\" },\n                    space_layouts = {\n                        [1] = {\n                            wide = \"com.microsoft.VSCode\",\n                            sidebar = { \"com.googlecode.iterm2\", \"com.apple.dt.Xcode\" }\n                        },\n                        [2] = { \"com.google.Chrome\", \"com.apple.Safari\" }\n                    }\n                }\n            }\n        }\n    }\n}):start()\n```\n\nTile Definitions:\n* anchor - Determines the reference point: \"topleft\", \"top\", \"topright\", \"left\", \"center\", \"right\", \"bottomleft\", \"bottom\", \"bottomright\"\n* w, h - Absolute width and height in pixels\n* wPct, hPct - Width and height as percentage of screen (0.0 to 1.0)\n\nSpace Layouts:\n* Space 1 (index [1]) - Used for tiled windows, maps tile names to bundle IDs\n* Spaces 2+ (indices [2], [3], etc.) - Used for fullscreen windows, arrays of bundle IDs\n* Bundle IDs can be strings or arrays of strings for multiple apps in the same tile/space",
+    "items": [
+      {
+        "def": "WindowManager:init()",
+        "desc": "Initialize the WindowManager spoon",
+        "doc": "Initialize the WindowManager spoon\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object",
+        "name": "init",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:init()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:configure(config)",
+        "desc": "Configure the WindowManager with profiles and layouts",
+        "doc": "Configure the WindowManager with profiles and layouts\n\nParameters:\n * config - A table containing configuration:\n   * debug - boolean, enable debug logging (default: false)\n   * notifications - boolean, enable notifications (default: true)\n   * profiles - table of screen name to profile mappings, where each profile contains:\n     * tiles - table of tile definitions, each tile having:\n       * anchor - string, position anchor like \"topleft\", \"center\", \"bottomright\" etc.\n       * w, h - numbers, absolute width and height in pixels\n       * OR wPct, hPct - numbers, percentage of screen (0.0 to 1.0)\n     * layouts - array of layout definitions, each containing:\n       * name - string, layout name\n       * hotkey - table with 'mods' array and 'key' string for hotkey binding\n       * space_layouts - table with numeric indices representing spaces:\n         * [1] - table of tileName to bundle ID(s) mappings for tiling\n         * [2+] - arrays of bundle IDs for fullscreen spaces\n       * focusApp - optional string, bundle ID of app to focus after layout\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Screen names must match exactly as reported by macOS (e.g., \"Built-in Retina Display\")\n * Bundle identifiers can be found using: osascript -e 'id of app \"AppName\"'\n * Space 1 is always used for tiling, spaces 2+ for fullscreen apps",
+        "name": "configure",
+        "parameters": [" * config - A table containing configuration"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:configure(config)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:start()",
+        "desc": "Start the WindowManager",
+        "doc": "Start the WindowManager\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Must be called after configure() to begin monitoring screens and binding hotkeys\n * Automatically detects screen changes and switches profiles\n * Enables space caching for improved performance",
+        "name": "start",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:start()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:stop()",
+        "desc": "Stop the WindowManager",
+        "doc": "Stop the WindowManager\n\nParameters:\n * None\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Stops all screen and space monitoring\n * Unbinds all hotkeys\n * Cleans up any active operations",
+        "name": "stop",
+        "parameters": [],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:stop()",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:bindHotkeys(mapping)",
+        "desc": "Bind hotkeys for WindowManager",
+        "doc": "Bind hotkeys for WindowManager\n\nParameters:\n * mapping - A table with hotkey mappings (currently unused)\n\nReturns:\n * The WindowManager object\n\nNotes:\n * This method exists for API consistency\n * Hotkeys are actually defined in the layout configuration within each profile\n * Each layout can have its own hotkey binding",
+        "name": "bindHotkeys",
+        "parameters": [" * mapping - A table with hotkey mappings"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:bindHotkeys(mapping)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:apply_layout(layout)",
+        "desc": "Apply a specific layout",
+        "doc": "Apply a specific layout\n\nParameters:\n * layout - A layout table with space_layouts specification:\n   * name - string, layout name (optional)\n   * space_layouts - table with numeric indices:\n     * [1] - tile mappings\n     * [2+] - fullscreen app lists\n   * focusApp - optional string, bundle ID to focus\n\nReturns:\n * The WindowManager object\n\nNotes:\n * Can be called programmatically to apply a layout without using hotkeys\n * Will launch apps if they're not running\n * Cancels any currently running layout application\n * Normalizes existing fullscreen spaces before applying new layout",
+        "name": "apply_layout",
+        "parameters": [" * layout - A layout table"],
+        "returns": ["The WindowManager object"],
+        "signature": "WindowManager:apply_layout(layout)",
+        "stripped_doc": "",
+        "type": "Method"
+      },
+      {
+        "def": "WindowManager:status()",
+        "desc": "Get the current status of the WindowManager",
+        "doc": "Get the current status of the WindowManager\n\nParameters:\n * None\n\nReturns:\n * A string describing the current status including:\n   * Current screen name\n   * Whether a layout is being applied\n   * Number of active hotkeys\n   * Screen and space watcher status\n   * Number of active operations\n   * Space cache details",
+        "name": "status",
+        "parameters": [],
+        "returns": ["A string describing the current status"],
+        "signature": "WindowManager:status()",
+        "stripped_doc": "",
+        "type": "Method"
+      }
+    ],
+    "name": "WindowManager",
+    "stripped_doc": "",
+    "submodules": [],
+    "type": "Module"
+  }
+]

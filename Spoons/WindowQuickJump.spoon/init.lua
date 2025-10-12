@@ -1,28 +1,24 @@
--- window_quick_jump.lua
--- Window Quick Jump — numeric/alpha badges to quickly change focus between windows
---
--- API:
---   local quick = require("window_quick_jump")
---   quick.setup(config)   -- binds F20 (or provided key) to toggle number mode
---   quick.teardown()      -- unbinds hotkey, removes badges, stops taps
---
--- Expected config keys (with defaults):
---   config.debug       : boolean (default: false)
---   config.maxBadges   : integer (default: 35)
---   config.keys.mod    : table   (default: {})
---   config.keys.num    : string  (default: "f20")
---   config.badge = {
---       size        = 28,
---       fontSize    = 15,
---       titleMaxW   = 440,
---       textYOffset = -2,
---       padding     = 6,
---   }
+--- === WindowQuickJump ===
+---
+--- Window Quick Jump — numeric/alpha badges to quickly change focus between windows
+---
+--- Download: [https://github.com/AndrewDryga/spoons/raw/main/WindowQuickJump.spoon.zip](https://github.com/AndrewDryga/spoons/raw/main/WindowQuickJump.spoon.zip)
+
+local obj = {}
+obj.__index = obj
+
+-- Metadata
+obj.name = "WindowQuickJump"
+obj.version = "1.0.0"
+obj.author = "Andrew Dryga"
+obj.homepage = "https://github.com/AndrewDryga/spoons"
+obj.license = "MIT - https://opensource.org/licenses/MIT"
 
 ---@diagnostic disable-next-line: undefined-global, lowercase-global
 hs = hs or {}
 
-local M = {}
+-- Logger
+obj.logger = hs.logger.new('WindowQuickJump')
 
 -- Constants
 local ESCAPE_KEYCODE = 53
@@ -48,8 +44,8 @@ local DEFAULT_CONFIG = {
         padding = 6,
     },
     keys = {
-        mod = { "cmd" },
-        num = "8",
+        mod = {},
+        num = "f20",
     },
 }
 
@@ -519,11 +515,10 @@ local function enterNumberMode()
     safeStart(state.tap)
 end
 
--- Public API
-
-function M.setup(config)
+-- Original module setup function wrapped for Spoon
+local function setup(config)
     if state.configured then
-        M.teardown()
+        obj:stop()
     end
 
     -- Merge config with defaults
@@ -558,7 +553,7 @@ function M.setup(config)
     log("Setup complete")
 end
 
-function M.teardown()
+local function teardown()
     -- Delete hotkey
     safeDelete(state.hotkey)
     state.hotkey = nil
@@ -570,4 +565,47 @@ function M.teardown()
     log("Teardown complete")
 end
 
-return M
+-- Spoon API
+function obj:init()
+    return self
+end
+
+function obj:start()
+    setup({
+        debug = self.debug or false,
+        maxBadges = self.maxBadges,
+        badge = {
+            size = self.badgeSize,
+            fontSize = self.badgeFontSize,
+            titleMaxW = self.titleMaxWidth,
+            textYOffset = self.textYOffset,
+            padding = self.badgePadding,
+        },
+        keys = self._keys or DEFAULT_CONFIG.keys
+    })
+    return self
+end
+
+function obj:stop()
+    teardown()
+    return self
+end
+
+function obj:bindHotkeys(mapping)
+    if mapping and mapping.toggle then
+        local mods, key = table.unpack(mapping.toggle)
+        self._keys = { mod = mods, num = key }
+    end
+    return self
+end
+
+-- Public configuration variables (for compatibility)
+obj.debug = false
+obj.maxBadges = DEFAULT_CONFIG.maxBadges
+obj.badgeSize = DEFAULT_CONFIG.badge.size
+obj.badgeFontSize = DEFAULT_CONFIG.badge.fontSize
+obj.titleMaxWidth = DEFAULT_CONFIG.badge.titleMaxW
+obj.textYOffset = DEFAULT_CONFIG.badge.textYOffset
+obj.badgePadding = DEFAULT_CONFIG.badge.padding
+
+return obj

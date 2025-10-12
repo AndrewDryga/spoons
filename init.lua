@@ -22,13 +22,27 @@ if hs and hs.window and hs.window.filter then
     end
 end
 
--- Cycle through windows using F18/F19
-local window_cycle = require("window_cycle")
-window_cycle.setup(config)
+-- Load WindowCycle Spoon (F18/F19 for cycling)
+hs.loadSpoon("WindowCycle")
+spoon.WindowCycle.debounceMs = 70
+spoon.WindowCycle.spaceHopDelay = 0.1
+if config.debug then
+    spoon.WindowCycle.logger.level = "debug"
+end
+spoon.WindowCycle:bindHotkeys({
+    prev = { { "cmd" }, "9" },
+    next = { { "cmd" }, "0" }
+}):start()
 
--- Jump to a window by typing its badge using F20
-local window_quick_jump = require("window_quick_jump")
-window_quick_jump.setup(config)
+-- Load WindowQuickJump Spoon (F20 for badge jumping)
+hs.loadSpoon("WindowQuickJump")
+spoon.WindowQuickJump.maxWindows = 35
+if config.debug then
+    spoon.WindowQuickJump.logger.level = "debug"
+end
+spoon.WindowQuickJump:bindHotkeys({
+    toggle = { { "cmd" }, "8" }
+}):start()
 
 -- Declarative per-screen tiles/layouts and multiscreen orchestration
 local function printDisplays()
@@ -187,18 +201,30 @@ local screens_config = {
                     [4] = { bundle_ids.warp },
                 },
             },
+            {
+                name = "Terminal2",
+                hotkey = { mods = { "cmd" }, key = "4" },
+                focusApp = bundle_ids.slack,
+                space_layouts = {
+                    [1] = {
+                        ["Center"]       = { bundle_ids.warp },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.chrome, bundle_ids.zed },
+                        ["Bottom Right"] = { bundle_ids.chat, bundle_ids.music, bundle_ids.dash },
+                    },
+                },
+            },
         },
     },
 }
 
-local window_manager = require("window_manager")
-
--- Drive the manager from config
-window_manager.setup({
+-- Load WindowManager Spoon for tiling/layout management
+hs.loadSpoon("WindowManager")
+spoon.WindowManager:configure({
     -- Default screen will be used if not other screen matches
     defaultScreenName = "Built-in Retina Display",
     debug = config.debug,
     notifications = false, -- Enable visual notifications (set to false to disable)
     startup_delay = 0.2,   -- Delay before auto-applying layout on startup (seconds)
     profiles = screens_config,
-})
+}):start()
