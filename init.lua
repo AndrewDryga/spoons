@@ -198,5 +198,7 @@ window_manager.setup({
     -- Default screen will be used if not other screen matches
     defaultScreenName = "Built-in Retina Display",
     debug = config.debug,
+    notifications = false, -- Enable visual notifications (set to false to disable)
+    startup_delay = 0.2,   -- Delay before auto-applying layout on startup (seconds)
     profiles = screens_config,
 })
