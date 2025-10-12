@@ -39,7 +39,9 @@ local function printDisplays()
     end
 end
 
-printDisplays()
+if config.debug then
+    printDisplays()
+end
 
 -- Diagnostics dump on config reload (no space hopping)
 local function diagnosticsDump()
@@ -170,7 +172,9 @@ local function diagnosticsDump()
     print("[init] ===== End diagnostics =====")
 end
 
-diagnosticsDump()
+if config.debug then
+    diagnosticsDump()
+end
 
 -- Bundle IDs used across layouts
 -- You can get Bundle ID using `osascript -e 'id of app "Dash"'`
@@ -232,11 +236,11 @@ local screens_config = {
             --             ["Center"]       = { bundle_ids.music },
             --             ["Top Left"]     = { bundle_ids.slack },
             --             ["Top Right"]    = { bundle_ids.dash },
-            --             ["Bottom Right"] = { bundle_ids.zed },
+            --             ["Bottom Right"] = { bundle_ids.chat },
             --         },
 
             --         [2] = { bundle_ids.chrome },
-            --         [3] = { bundle_ids.chat },
+            --         [3] = { bundle_ids.zed },
             --         [4] = { bundle_ids.warp },
             --     },
             -- },
@@ -266,8 +270,43 @@ local screens_config = {
         },
         layouts = {
             {
-                name = "LaptopSpaces",
+                name = "Chrome",
+                hotkey = { mods = { "cmd" }, key = "1" },
+                focusApp = bundle_ids.chrome,
+                space_layouts = {
+                    [1] = {
+                        ["Center"]       = { bundle_ids.music },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.chat },
+                    },
 
+                    [2] = { bundle_ids.chrome },
+                    [3] = { bundle_ids.zed },
+                    [4] = { bundle_ids.warp },
+                },
+            },
+            {
+                name = "Editor",
+                hotkey = { mods = { "cmd" }, key = "2" },
+                focusApp = bundle_ids.zed,
+                space_layouts = {
+                    [1] = {
+                        ["Center"]       = { bundle_ids.music },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.chat },
+                    },
+
+                    [2] = { bundle_ids.chrome },
+                    [3] = { bundle_ids.zed },
+                    [4] = { bundle_ids.warp },
+                },
+            },
+            {
+                name = "Terminal",
+                hotkey = { mods = { "cmd" }, key = "3" },
+                focusApp = bundle_ids.warp,
                 space_layouts = {
                     [1] = {
                         ["Center"]       = { bundle_ids.music },
