@@ -149,6 +149,8 @@ spoon.WindowCycle:bindHotkeys({
 
 Lightweight keystroke visualizer. Shows typed characters, modifier-only presses, and special keys as floating "pills" overlay.
 
+It's useful for demos, video recordings, and live streams where you want to show which hotkeys you have pressed.
+
 ### Features
 - Listen-only event tap when supported (does not intercept keystrokes)
 - Show all keys or shortcuts-only
@@ -181,11 +183,13 @@ spoon.ShowKeyPresses:bindHotkeys({
 ## WindowManager
 https://github.com/user-attachments/assets/90546dfa-cc64-44e8-9f02-777a0120c53e
 
-Advanced window manager with deterministic tiling layouts and fullscreen space management.
+An advanced window manager with deterministic tiling layouts and full-screen Space management.
 
-I did this because I both work on laptop and connect it to my external monitor, and I wanted to have different layouts for each screen applied automatically: use MacOS spaces on laptop and tiling on larger display.
+It lets you define a layout for your applications (including full-screen Spaces) and, with one click, rearrange them and switch focus. Layouts can be defined per monitor.
 
-This Spoon works around MacOS limitations by hopping between spaces and maintaining a window cache.
+This is especially useful if you work on a laptop and also connect to an external display; rearranging the workspace is annoying in those situations. It’s also great for quickly jumping to your favorite app with a consistent hotkey while keeping others within eyes’ reach.
+
+This Spoon works around macOS limitations by hopping between Spaces and maintaining a window cache.
 
 ### Features
 - **Per-screen layouts** with automatic profile switching
