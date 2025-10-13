@@ -45,14 +45,14 @@ spoon.WindowQuickJump:bindHotkeys({
 }):start()
 
 -- Load ShowKeyPresses Spoon (keystroke overlay; load after WindowQuickJump so taps observe digits in number mode)
-hs.loadSpoon("ShowKeyPresses")
-spoon.ShowKeyPresses:start({
-    showText = true, -- shows typed characters too
-    position = "center",
-    fontSize = 26,
-    maxPills = 2,
-    pillBg   = { white = 0, alpha = 0.72 },
-})
+-- hs.loadSpoon("ShowKeyPresses")
+-- spoon.ShowKeyPresses:start({
+--     showText = true, -- shows typed characters too
+--     position = "center",
+--     fontSize = 26,
+--     maxPills = 2,
+--     pillBg   = { white = 0, alpha = 0.72 },
+-- })
 
 -- Declarative per-screen tiles/layouts and multiscreen orchestration
 local function printDisplays()
