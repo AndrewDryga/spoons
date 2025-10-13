@@ -401,6 +401,7 @@ local function bindHotkeys()
 end
 
 -- Original module setup function
+local teardown
 local function setup(config)
     -- If already configured, teardown and re-bind
     if state.configured then
@@ -425,7 +426,7 @@ local function setup(config)
     log("Setup complete")
 end
 
-local function teardown()
+function teardown()
     -- Delete all hotkeys
     for name, hotkey in pairs(state.hotkeys) do
         safeDelete(hotkey)
