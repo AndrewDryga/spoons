@@ -71,7 +71,7 @@ spoon.WindowManager:configure({
 ```
 
 ## WindowQuickJump
-https://github.com/user-attachments/assets/0f6efada-ee48-4bd4-9400-1a6c53eacaf0
+https://github.com/user-attachments/assets/c9dde70d-4db0-4527-899e-182f6598ff78
 
 Instantly jump to any visible window by displaying keyboard badges (1-9, A-Z) on all windows.
 
@@ -79,7 +79,6 @@ Instantly jump to any visible window by displaying keyboard badges (1-9, A-Z) on
 - **Visual badges** with numbers and letters for up to 35 windows
 - **Smart positioning** prevents badge overlap
 - **Dark mode support** with automatic theme detection
-- **Active window highlighting**
 - **Window title display** with app names
 
 ### Configuration
@@ -108,7 +107,7 @@ spoon.WindowQuickJump:start()
 3. Press `Escape` to cancel
 
 ## WindowCycle
-https://github.com/user-attachments/assets/63e9a6a2-e0ea-4719-8aa8-c327dc6502fd
+https://github.com/user-attachments/assets/8c33d27c-ca43-430a-9578-0e21dd883bfa
 
 Cycle through windows on the current space with automatic space switching at boundaries.
 
@@ -180,7 +179,7 @@ spoon.ShowKeyPresses:bindHotkeys({
 ```
 
 ## WindowManager
-https://github.com/user-attachments/assets/ea4d0c50-edce-462c-b35b-8416d3aadedb
+https://github.com/user-attachments/assets/90546dfa-cc64-44e8-9f02-777a0120c53e
 
 Advanced window manager with deterministic tiling layouts and fullscreen space management.
 
