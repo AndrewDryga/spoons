@@ -25,9 +25,14 @@ obj.license        = "MIT - https://opensource.org/licenses/MIT"
 -- ====== CONFIG (defaults) ======
 obj.cfg            = {
     -- what to show
-    showText                  = true, -- true = show all keys (typed characters). false = only shortcuts (mod+key) and specials
-    showModifiersAlone        = true, -- show ⇧/⌘ press by itself
-    suppressAutoRepeat        = true, -- hide held-key repeats
+    showText                  = true,  -- true = show all keys (typed characters). false = only shortcuts (mod+key) and specials
+    showModifiersAlone        = false, -- show ⇧/⌘ press by itself
+    suppressAutoRepeat        = true,  -- hide held-key repeats
+
+    -- repeat visualization
+    showRepeatCount           = true, -- show ×N when the same key is pressed repeatedly
+    repeatCountWindow         = 1.0,  -- seconds to aggregate same-key presses
+    repeatCountPrefix         = "×",
 
     -- look & placement
     position                  = "bottomcenter", -- "center" | "bottomcenter" | "topcenter"
@@ -53,7 +58,7 @@ obj.cfg            = {
     pillStrokeWidth           = 1,
     pillStrokeFn              = { red = 0.3, green = 0.5, blue = 1.0, alpha = 0.35 },
     textShadowOffset          = { x = 0, y = 1 },
-    textShadowColor           = { white = 0, alpha = 0.5 },
+    textShadowColor           = { white = 0, alpha = 0.3 },
     textVerticalBiasDefault   = 8,
     textVerticalBiasPunct     = 8,
     textVerticalBiasFn        = 8,
@@ -271,7 +276,40 @@ local function rebuildCanvas(self)
     -- measure
     local totalW, maxH = 0, 0
     for _, p in ipairs(self._pills) do
-        if not p.w then p.w, p.h = computePillSize(p.label, cfg) end
+        local baseDisp = p.label
+        if type(baseDisp) == "string" and baseDisp:find("␣", 1, true) then
+            baseDisp = baseDisp:gsub("␣", cfg.spaceLabel or "Space")
+        end
+        -- measure width/height using actual font and size as renderer
+        local isModifier = (type(baseDisp) == "string") and
+            ((baseDisp:find("⌘") or baseDisp:find("⌥") or baseDisp:find("⌃") or baseDisp:find("⇧")) ~= nil)
+        local isBackspace = (baseDisp == "⌫" or baseDisp == "⌦")
+        local isSpaceDisp = (type(baseDisp) == "string") and (baseDisp:find(cfg.spaceLabel or "Space", 1, true) ~= nil)
+        local textFontName = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName)
+        local textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
+            or (isModifier and math.floor((cfg.fontSize or 22) * (cfg.modifierFontScale or 1.0))
+                or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize)))
+        if self.cfg.showRepeatCount and p.count and p.count > 1 then
+            local prefix = (cfg.repeatCountPrefix or "×")
+            local suffixLabel = " " .. prefix .. tostring(p.count)
+            local baseSz = hs.drawing.getTextDrawingSize(baseDisp, {
+                font = { name = textFontName, size = textSize },
+                paragraphStyle = { alignment = "left" },
+            })
+            local suffixSz = hs.drawing.getTextDrawingSize(suffixLabel, {
+                font = { name = textFontName, size = textSize },
+                paragraphStyle = { alignment = "left" },
+            })
+            p.w = math.ceil(baseSz.w + suffixSz.w) + cfg.pillPadX * 2
+            p.h = math.ceil(baseSz.h) + cfg.pillPadY * 2
+        else
+            local sz = hs.drawing.getTextDrawingSize(baseDisp, {
+                font = { name = textFontName, size = textSize },
+                paragraphStyle = { alignment = "center" },
+            })
+            if not p.w then p.w = math.ceil(sz.w) + cfg.pillPadX * 2 end
+            if not p.h then p.h = math.ceil(sz.h) + cfg.pillPadY * 2 end
+        end
         totalW = totalW + p.w
         if p.h > maxH then maxH = p.h end
     end
@@ -364,30 +402,95 @@ local function rebuildCanvas(self)
             strokeColor = (p.isFn and cfg.pillStrokeFn) or cfg.pillStroke,
             strokeWidth = cfg.pillStrokeWidth,
         })
-        -- text shadow (for readability on video)
-        table.insert(defs, {
-            type = "text",
-            text = displayLabel,
-            textFont = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName),
-            textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
+        -- text shadow and main text
+        -- If repeat counter is present, split base and suffix so we can tint the suffix differently
+        if self.cfg.showRepeatCount and p.count and p.count > 1 then
+            local prefix = (cfg.repeatCountPrefix or "×")
+            local suffixLabel = " " .. prefix .. tostring(p.count)
+            local baseLabel = displayLabel
+
+            local textFontName = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName)
+            local textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
                 or (isModifier and math.floor((cfg.fontSize or 22) * (cfg.modifierFontScale or 1.0))
-                    or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize))),
-            textColor = cfg.textShadowColor,
-            textAlignment = "center",
-            frame = { x = x + (cfg.textShadowOffset.x or 0), y = yText + (cfg.textShadowOffset.y or 0), w = p.w, h = p.h },
-        })
-        -- main text
-        table.insert(defs, {
-            type = "text",
-            text = displayLabel,
-            textFont = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName),
-            textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
-                or (isModifier and math.floor((cfg.fontSize or 22) * (cfg.modifierFontScale or 1.0))
-                    or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize))),
-            textColor = cfg.textColor,
-            textAlignment = "center",
-            frame = { x = x, y = yText, w = p.w, h = p.h },
-        })
+                    or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize)))
+
+            local baseSz = hs.drawing.getTextDrawingSize(baseLabel, {
+                font = { name = textFontName, size = textSize },
+                paragraphStyle = { alignment = "left" },
+            })
+            local suffixSz = hs.drawing.getTextDrawingSize(suffixLabel, {
+                font = { name = textFontName, size = textSize },
+                paragraphStyle = { alignment = "left" },
+            })
+            local totalTextW = baseSz.w + suffixSz.w
+            local leftX = x + math.floor((p.w - totalTextW) / 2)
+
+            -- base shadow
+            table.insert(defs, {
+                type = "text",
+                text = baseLabel,
+                textFont = textFontName,
+                textSize = textSize,
+                textColor = cfg.textShadowColor,
+                textAlignment = "left",
+                frame = { x = leftX + (cfg.textShadowOffset.x or 0), y = yText + (cfg.textShadowOffset.y or 0), w = baseSz.w, h = p.h },
+            })
+            -- base main
+            table.insert(defs, {
+                type = "text",
+                text = baseLabel,
+                textFont = textFontName,
+                textSize = textSize,
+                textColor = cfg.textColor,
+                textAlignment = "left",
+                frame = { x = leftX, y = yText, w = baseSz.w, h = p.h },
+            })
+            -- suffix shadow
+            local suffixX = leftX + baseSz.w
+            table.insert(defs, {
+                type = "text",
+                text = suffixLabel,
+                textFont = textFontName,
+                textSize = textSize,
+                textColor = cfg.textShadowColor,
+                textAlignment = "left",
+                frame = { x = suffixX + (cfg.textShadowOffset.x or 0), y = yText + (cfg.textShadowOffset.y or 0), w = suffixSz.w, h = p.h },
+            })
+            -- suffix main (dimmed)
+            table.insert(defs, {
+                type = "text",
+                text = suffixLabel,
+                textFont = textFontName,
+                textSize = textSize,
+                textColor = (cfg.repeatCountColor or { white = 0.75, alpha = 1 }),
+                textAlignment = "left",
+                frame = { x = suffixX, y = yText, w = suffixSz.w, h = p.h },
+            })
+        else
+            -- no repeat counter: draw single centered label
+            table.insert(defs, {
+                type = "text",
+                text = displayLabel,
+                textFont = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName),
+                textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
+                    or (isModifier and math.floor((cfg.fontSize or 22) * (cfg.modifierFontScale or 1.0))
+                        or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize))),
+                textColor = cfg.textShadowColor,
+                textAlignment = "center",
+                frame = { x = x + (cfg.textShadowOffset.x or 0), y = yText + (cfg.textShadowOffset.y or 0), w = p.w, h = p.h },
+            })
+            table.insert(defs, {
+                type = "text",
+                text = displayLabel,
+                textFont = ((isBackspace or isModifier or isSpaceDisp) and (cfg.uiFontName or cfg.fontName) or cfg.fontName),
+                textSize = (isBackspace and math.floor((cfg.fontSize or 22) * (cfg.specialFontScale or 1.0))
+                    or (isModifier and math.floor((cfg.fontSize or 22) * (cfg.modifierFontScale or 1.0))
+                        or (isSpaceDisp and math.floor((cfg.fontSize or 22) * (cfg.spaceFontScale or 1.0)) or cfg.fontSize))),
+                textColor = cfg.textColor,
+                textAlignment = "center",
+                frame = { x = x, y = yText, w = p.w, h = p.h },
+            })
+        end
         x = x + p.w + cfg.spacing
     end
 
@@ -443,13 +546,27 @@ local function pushPill(self, label)
     if self._lastPushed and self._lastPushed.label == label and (now - self._lastPushed.when) < 0.05 then
         return
     end
+    -- If repeating the same key, increment counter on the last pill
+    if self.cfg.showRepeatCount then
+        local last = self._pills[#self._pills]
+        if last and last.label == label and (now - (last.ts or 0)) <= (self.cfg.repeatCountWindow or 1.0) then
+            last.count = (last.count or 1) + 1
+            last.ts = now
+            -- force re-measure to account for "×N" width
+            last.w, last.h = nil, nil
+            self._lastPushed = { label = label, when = now }
+            rebuildCanvas(self)
+            queueHide(self)
+            return
+        end
+    end
     local isFn = (type(label) == "string") and (label:match("F%d%d?%d?") ~= nil)
     -- Enforce maxPills==1 as “latest only” by resetting list
     local maxP = self.cfg.maxPills or 8
     if maxP <= 1 then
         self._pills = {}
     end
-    table.insert(self._pills, { label = label, ts = now, isFn = isFn })
+    table.insert(self._pills, { label = label, ts = now, isFn = isFn, count = 1 })
     -- Enforce maxPills immediately for >1
     while #self._pills > maxP do table.remove(self._pills, 1) end
     self._lastPushed = { label = label, when = now }
