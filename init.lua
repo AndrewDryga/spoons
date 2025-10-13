@@ -24,11 +24,15 @@ end
 
 -- Load WindowCycle Spoon (F18/F19 for cycling)
 hs.loadSpoon("WindowCycle")
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowCycle.debounceMs = 70
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowCycle.spaceHopDelay = 0.1
 if config.debug then
+    ---@diagnostic disable-next-line: undefined-global
     spoon.WindowCycle.logger.level = "debug"
 end
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowCycle:bindHotkeys({
     prev = { { "" }, "f18" },
     next = { { "" }, "f19" }
@@ -36,10 +40,13 @@ spoon.WindowCycle:bindHotkeys({
 
 -- Load WindowQuickJump Spoon (F20 for badge jumping)
 hs.loadSpoon("WindowQuickJump")
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowQuickJump.maxWindows = 35
 if config.debug then
+    ---@diagnostic disable-next-line: undefined-global
     spoon.WindowQuickJump.logger.level = "debug"
 end
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowQuickJump:bindHotkeys({
     toggle = { { "" }, "f20" }
 }):start()
@@ -218,6 +225,7 @@ local screens_config = {
 
 -- Load WindowManager Spoon for tiling/layout management
 hs.loadSpoon("WindowManager")
+---@diagnostic disable-next-line: undefined-global
 spoon.WindowManager:configure({
     -- Default screen will be used if not other screen matches
     defaultScreenName = "Built-in Retina Display",
