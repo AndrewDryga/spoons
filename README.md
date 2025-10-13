@@ -17,6 +17,7 @@ Warning! Large chucks of this repo (especially documentation) are vibe-coded, so
 1. **[WindowQuickJump](#windowquickjump)** - Jump to any window instantly with visual badges
 2. **[WindowCycle](#windowcycle)** - Cycle through windows and spaces seamlessly
 3. **[WindowManager](#windowmanager)** - Advanced tiling and fullscreen layout management
+4. **[ShowKeyPresses](#showkeypresses)** - Visualize keystrokes as overlay pills
 
 ## 📦 Installation
 
@@ -140,6 +141,39 @@ spoon.WindowCycle:start()
 spoon.WindowCycle:bindHotkeys({
     next = {{"alt"}, "tab"},
     prev = {{"alt", "shift"}, "tab"}
+})
+```
+
+## ShowKeyPresses
+
+Lightweight keystroke visualizer. Shows typed characters, modifier-only presses, and special keys as floating "pills" overlay.
+
+### Features
+- Listen-only event tap when supported (does not intercept keystrokes)
+- Show all keys or shortcuts-only
+- Modifier-only display (⌘ ⌥ ⌃ ⇧)
+- Fade-out with TTL, multiple pills with spacing
+- Customizable fonts, colors, and position
+
+### Configuration
+
+```lua
+hs.loadSpoon("ShowKeyPresses")
+
+-- Basic example
+spoon.ShowKeyPresses:start({
+    showText = true,               -- show letters/digits; set false to show only shortcuts/specials
+    position = "center",           -- "center" | "bottomcenter" | "topcenter"
+    fontSize = 26,
+    maxPills = 2,
+    pillBg = { white = 0, alpha = 0.72 },
+})
+```
+
+Optional hotkey to toggle:
+```lua
+spoon.ShowKeyPresses:bindHotkeys({
+    toggle = {{"cmd","alt"}, "k"}
 })
 ```
 
