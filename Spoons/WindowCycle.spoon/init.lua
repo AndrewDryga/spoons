@@ -300,11 +300,15 @@ local function cycleToWindow(direction)
     if not screen then return end
 
     local windows = getWindowsOnCurrentSpace(screen)
+    local _, spaces = getCurrentSpaceIndex(screen)
+    local multipleSpaces = spaces and #spaces > 1
 
-    -- If no windows, hop to adjacent space
+    -- If no windows, hop only if multiple spaces; otherwise do nothing
     if #windows == 0 then
-        local preferredPosition = (direction == "next") and "first" or "last"
-        hopToSpace(direction, preferredPosition)
+        if multipleSpaces then
+            local preferredPosition = (direction == "next") and "first" or "last"
+            hopToSpace(direction, preferredPosition)
+        end
         return
     end
 
@@ -317,16 +321,24 @@ local function cycleToWindow(direction)
 
     if direction == "next" then
         if not currentIndex or currentIndex >= #windows then
-            -- Wrap to next space
-            hopToSpace("next", "first")
+            -- Wrap: hop only if multiple spaces, otherwise wrap within current space
+            if multipleSpaces then
+                hopToSpace("next", "first")
+            else
+                targetWindow = windows[1]
+            end
         else
             -- Move to next window
             targetWindow = windows[currentIndex + 1]
         end
     else -- "prev"
         if not currentIndex or currentIndex <= 1 then
-            -- Wrap to previous space
-            hopToSpace("prev", "last")
+            -- Wrap: hop only if multiple spaces, otherwise wrap within current space
+            if multipleSpaces then
+                hopToSpace("prev", "last")
+            else
+                targetWindow = windows[#windows]
+            end
         else
             -- Move to previous window
             targetWindow = windows[currentIndex - 1]
