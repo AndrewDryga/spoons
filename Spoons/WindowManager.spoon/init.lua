@@ -51,6 +51,7 @@ local T = {
     FULLSCREEN = {
         CREATE_TIMEOUT = 2.0,
         CREATE_POLL_INTERVAL = 0.1,
+        SETTLE_ZERO_GRACE = 0.3, -- accept "app has no windows to place" after this long, vs burning the timeout
         SET_DELAY = 0.1,
         EXIT_TIMEOUT = 1.2,
         EXIT_POLL_INTERVAL = 0.12,
@@ -579,10 +580,18 @@ local function poll_for_window_settling(app, target_space, on_done)
     end
 
     local app_name = app:name() or "unknown"
+    -- If the app reports no windows for this many consecutive polls, treat it as
+    -- settled (nothing to place) rather than burning the whole timeout.
+    local zero_grace_polls = math.max(1, math.ceil(T.FULLSCREEN.SETTLE_ZERO_GRACE / T.FULLSCREEN.CREATE_POLL_INTERVAL))
+    local zero_polls = 0
 
     pollUntil("settle_" .. app_name, function()
         local wins = app:allWindows() or {}
-        if #wins == 0 then return false end
+        if #wins == 0 then
+            zero_polls = zero_polls + 1
+            return zero_polls >= zero_grace_polls
+        end
+        zero_polls = 0
 
         for _, win in ipairs(wins) do
             local ok, spaces = pcall(hs.spaces.windowSpaces, win)
@@ -1258,6 +1267,10 @@ local function apply_fullscreen(fullscreenOrder, appWindows, target_screen, on_d
     Logger:info("Creating %d fullscreen spaces", total)
 
     local idx = 1
+    local iterations = 0
+    -- Re-queues (multi-window or not-yet-launched apps) extend fullscreenOrder, so
+    -- cap total passes as a backstop against a pathological never-ending loop.
+    local max_iterations = total * 10 + 50
     local operation_id = state.current_operation_id
 
     local function process_next(new_sid, was_adopted, bid)
@@ -1309,6 +1322,15 @@ local function apply_fullscreen(fullscreenOrder, appWindows, target_screen, on_d
                     string.format("Created %d fullscreen spaces with %d errors", #new_space_ids, errors),
                     NOTIFICATION_TYPES.WARNING)
             end
+            if on_done then on_done(new_space_ids) end
+            return
+        end
+
+        iterations = iterations + 1
+        if iterations > max_iterations then
+            state.is_discovering_spaces = false
+            Logger:warn("Fullscreen creation hit safety cap (%d passes); stopping with %d spaces, %d errors",
+                max_iterations, #new_space_ids, errors)
             if on_done then on_done(new_space_ids) end
             return
         end
