@@ -9,7 +9,7 @@ obj.__index = obj
 
 -- Metadata
 obj.name = "WindowCycle"
-obj.version = "1.0.0"
+obj.version = "1.1.0"
 obj.author = "Andrew Dryga"
 obj.homepage = "https://github.com/AndrewDryga/spoons"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
@@ -21,13 +21,13 @@ hs = hs or {}
 obj.logger = hs.logger.new('WindowCycle')
 
 -- Constants
-local MIN_WINDOW_SIZE = 8
-local POSITION_TOLERANCE = 10
+local MIN_WINDOW_SIZE = 8     -- ignore tiny utility/HUD windows (px)
+local POSITION_TOLERANCE = 10 -- X band width (px) for left-to-right column grouping
 
 -- Default configuration values
 local DEFAULT_CONFIG = {
-    lockMs = 70,
-    hopSettle = 0.1,
+    lockMs = 70,     -- input throttle window in ms (public name: debounceMs)
+    hopSettle = 0.1, -- wait after a Space switch before reading windows (public: spaceHopDelay)
     keys = {
         mod = {},
         prev = "f18",
@@ -39,15 +39,20 @@ local DEFAULT_CONFIG = {
 local state = {
     hotkeys = {},
     configured = false,
+    hopping = false, -- true while a Space hop is settling
+    hopTimer = nil,  -- pending post-hop focus timer (tracked so teardown can cancel it)
 }
 
 -- Config provided via setup()
 local CONFIG = nil
-local LOG = false
 
+-- Diagnostics go through obj.logger so its level controls visibility. Enable with
+-- `spoon.WindowCycle.debug = true` (or :configure-time debug) or
+-- `spoon.WindowCycle.logger.level = "debug"`.
 local function log(...)
-    if LOG then
-        print("[window_cycle]", ...)
+    local logger = obj.logger
+    if logger and logger.d then
+        logger.d(...)
     end
 end
 
@@ -58,20 +63,33 @@ local function safeDelete(hotkey)
     end
 end
 
--- Debounce helper to prevent rapid cycling
-local function debounce(intervalSeconds, fn)
-    local timer = nil
+-- Normalize a modifiers list, dropping empty-string entries so callers can pass
+-- `{}` or `{ "" }` interchangeably to mean "no modifier".
+local function normalizeMods(mods)
+    if type(mods) ~= "table" then return {} end
+    local out = {}
+    for _, m in ipairs(mods) do
+        if type(m) == "string" and m ~= "" then
+            out[#out + 1] = m
+        end
+    end
+    return out
+end
+
+-- Leading-edge throttle: run immediately on the first call, then ignore further
+-- calls for `intervalSeconds`. Keeps a single press instant while still
+-- rate-limiting key auto-repeat (a trailing debounce delayed every press and
+-- never fired while a key was held down).
+local function throttle(intervalSeconds, fn)
+    local lastFire = 0
 
     return function(...)
-        local args = table.pack(...)
-
-        if timer then
-            timer:stop()
+        local now = hs.timer.secondsSinceEpoch()
+        if (now - lastFire) < intervalSeconds then
+            return
         end
-
-        timer = hs.timer.doAfter(intervalSeconds, function()
-            fn(table.unpack(args, 1, args.n))
-        end)
+        lastFire = now
+        fn(...)
     end
 end
 
@@ -112,9 +130,14 @@ end
 local function compareWindows(a, b)
     local frameA, frameB = a:frame(), b:frame()
 
-    -- Sort by X position first
-    if math.abs(frameA.x - frameB.x) > POSITION_TOLERANCE then
-        return frameA.x < frameB.x
+    -- Group windows into vertical bands by X so a column sorts top-to-bottom.
+    -- Quantizing to a fixed band keeps the comparator transitive; a plain
+    -- |Δx| > tolerance test is NOT transitive and can make table.sort raise
+    -- "invalid order function for sorting" on certain layouts.
+    local bandA = math.floor(frameA.x / POSITION_TOLERANCE)
+    local bandB = math.floor(frameB.x / POSITION_TOLERANCE)
+    if bandA ~= bandB then
+        return bandA < bandB
     end
 
     -- Then by Y position
@@ -143,29 +166,27 @@ local function getFocusedScreen()
     return (frontWindow and frontWindow:screen()) or hs.screen.mainScreen()
 end
 
--- Window filter for current space
+-- Window filter for current space (shared instance — never rebuilt per call)
 local windowFilter = hs.window.filter.defaultCurrentSpace
 
 local function getWindowsOnCurrentSpace(screen)
-    if not screen or not screen.id then
+    if not screen then
         return {}
     end
 
     local windows = {}
     local screenId = screen:id()
 
-    if windowFilter and windowFilter.getWindows then
-        local allWindows = windowFilter:getWindows()
-        if allWindows then
-            for _, window in ipairs(allWindows) do
-                if window and window.screen then
-                    local windowScreen = window:screen()
-                    if windowScreen and windowScreen.id and windowScreen:id() == screenId then
-                        if isValidWindow(window) then
-                            table.insert(windows, window)
-                        end
-                    end
-                end
+    local allWindows = windowFilter and windowFilter.getWindows and windowFilter:getWindows()
+    if allWindows then
+        for _, window in ipairs(allWindows) do
+            -- Guard against windows that died between enumeration and inspection.
+            local ok, keep = pcall(function()
+                local windowScreen = window:screen()
+                return windowScreen and windowScreen:id() == screenId and isValidWindow(window)
+            end)
+            if ok and keep then
+                table.insert(windows, window)
             end
         end
     end
@@ -198,46 +219,14 @@ local function getCurrentSpaceIndex(screen)
     return nil, screenSpaces
 end
 
-local function navigateToSpace(targetSpaceId, targetWindow)
-    if not targetSpaceId then return end
-
-    local ok, err = pcall(function()
-        hs.spaces.gotoSpace(targetSpaceId)
-
-        if targetWindow then
-            local settleTime = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
-            hs.timer.doAfter(settleTime, function()
-                if targetWindow and targetWindow.raise and targetWindow.focus then
-                    targetWindow:raise()
-                    targetWindow:focus()
-                end
-            end)
-        elseif CONFIG and CONFIG.hopSettle and CONFIG.hopSettle > 0 then
-            -- Try to find and focus a window after settling
-            hs.timer.doAfter(CONFIG.hopSettle, function()
-                local screen = getFocusedScreen()
-                local windows = getWindowsOnCurrentSpace(screen)
-                if windows and #windows > 0 then
-                    local firstWindow = windows[1]
-                    if firstWindow and firstWindow.raise and firstWindow.focus then
-                        firstWindow:raise()
-                        firstWindow:focus()
-                    end
-                end
-            end)
-        end
-    end)
-
-    if not ok then
-        log("Failed to navigate to space:", err)
-    end
-end
-
-local function hopToSpace(direction, preferredPosition)
-    local screen = getFocusedScreen()
+local function hopToSpace(direction, preferredPosition, screen, currentIndex, allSpaces)
+    screen = screen or getFocusedScreen()
     if not screen then return end
 
-    local currentIndex, allSpaces = getCurrentSpaceIndex(screen)
+    -- Reuse the caller's already-computed space info when provided.
+    if not currentIndex or not allSpaces then
+        currentIndex, allSpaces = getCurrentSpaceIndex(screen)
+    end
     if not currentIndex or not allSpaces or #allSpaces == 0 then
         log("Unable to get space information")
         return
@@ -253,31 +242,47 @@ local function hopToSpace(direction, preferredPosition)
 
     local targetSpaceId = allSpaces[targetIndex]
 
+    -- Mark busy so rapid presses don't race the in-flight Space transition.
+    state.hopping = true
+
     -- Navigate to space and then focus the appropriate window
     local ok, err = pcall(function()
         hs.spaces.gotoSpace(targetSpaceId)
 
+        -- macOS needs a beat after gotoSpace before the window list for the new
+        -- Space is readable — this delay is load-bearing, not cosmetic.
         local settleTime = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
-        hs.timer.doAfter(settleTime, function()
-            local windows = getWindowsOnCurrentSpace(screen)
-            local targetWindow = nil
+        state.hopTimer = hs.timer.doAfter(settleTime, function()
+            -- Release the lock first so a thrown focus call can't wedge cycling.
+            state.hopping = false
+            state.hopTimer = nil
 
-            if windows and #windows > 0 then
-                if preferredPosition == "first" then
-                    targetWindow = windows[1]
-                elseif preferredPosition == "last" then
-                    targetWindow = windows[#windows]
+            local focusOk, focusErr = pcall(function()
+                local windows = getWindowsOnCurrentSpace(screen)
+                local targetWindow = nil
+
+                if windows and #windows > 0 then
+                    if preferredPosition == "first" then
+                        targetWindow = windows[1]
+                    elseif preferredPosition == "last" then
+                        targetWindow = windows[#windows]
+                    end
                 end
-            end
 
-            if targetWindow and targetWindow.raise and targetWindow.focus then
-                targetWindow:raise()
-                targetWindow:focus()
+                if targetWindow then
+                    targetWindow:raise()
+                    targetWindow:focus()
+                end
+            end)
+            if not focusOk then
+                log("Failed to focus after hop:", focusErr)
             end
         end)
     end)
 
     if not ok then
+        -- gotoSpace failed before we scheduled the settle timer; release the lock.
+        state.hopping = false
         log("Failed to hop to space:", err)
     end
 end
@@ -296,59 +301,67 @@ local function findCurrentWindowIndex(windows, currentWindow)
 end
 
 local function cycleToWindow(direction)
+    -- Ignore presses while a Space hop is settling to avoid racing the transition.
+    if state.hopping then return end
+
     local screen = getFocusedScreen()
     if not screen then return end
 
     local windows = getWindowsOnCurrentSpace(screen)
-    local _, spaces = getCurrentSpaceIndex(screen)
+    local spaceIndex, spaces = getCurrentSpaceIndex(screen)
     local multipleSpaces = spaces and #spaces > 1
 
     -- If no windows, hop only if multiple spaces; otherwise do nothing
     if #windows == 0 then
         if multipleSpaces then
             local preferredPosition = (direction == "next") and "first" or "last"
-            hopToSpace(direction, preferredPosition)
+            hopToSpace(direction, preferredPosition, screen, spaceIndex, spaces)
         end
         return
     end
 
     -- Find current window position
     local currentWindow = hs.window.frontmostWindow()
-    local currentIndex = findCurrentWindowIndex(windows, currentWindow)
+    local windowIndex = findCurrentWindowIndex(windows, currentWindow)
 
     -- Determine target window
     local targetWindow = nil
 
     if direction == "next" then
-        if not currentIndex or currentIndex >= #windows then
+        if not windowIndex or windowIndex >= #windows then
             -- Wrap: hop only if multiple spaces, otherwise wrap within current space
             if multipleSpaces then
-                hopToSpace("next", "first")
+                hopToSpace("next", "first", screen, spaceIndex, spaces)
             else
                 targetWindow = windows[1]
             end
         else
             -- Move to next window
-            targetWindow = windows[currentIndex + 1]
+            targetWindow = windows[windowIndex + 1]
         end
     else -- "prev"
-        if not currentIndex or currentIndex <= 1 then
+        if not windowIndex or windowIndex <= 1 then
             -- Wrap: hop only if multiple spaces, otherwise wrap within current space
             if multipleSpaces then
-                hopToSpace("prev", "last")
+                hopToSpace("prev", "last", screen, spaceIndex, spaces)
             else
                 targetWindow = windows[#windows]
             end
         else
             -- Move to previous window
-            targetWindow = windows[currentIndex - 1]
+            targetWindow = windows[windowIndex - 1]
         end
     end
 
     -- Focus target window if found
-    if targetWindow and targetWindow.raise and targetWindow.focus then
-        targetWindow:raise()
-        targetWindow:focus()
+    if targetWindow then
+        local ok, err = pcall(function()
+            targetWindow:raise()
+            targetWindow:focus()
+        end)
+        if not ok then
+            log("Failed to focus window:", err)
+        end
     end
 end
 
@@ -361,12 +374,13 @@ local function bindHotkeys()
 
     local lockSeconds = CONFIG.lockMs / 1000
 
-    -- Create debounced cycling functions
-    local cyclePrevDebounced = debounce(lockSeconds, function()
+    -- Throttle cycling so key auto-repeat can't outrun the UI, while keeping the
+    -- first press instant.
+    local cyclePrevThrottled = throttle(lockSeconds, function()
         cycleToWindow("prev")
     end)
 
-    local cycleNextDebounced = debounce(lockSeconds, function()
+    local cycleNextThrottled = throttle(lockSeconds, function()
         cycleToWindow("next")
     end)
 
@@ -378,7 +392,7 @@ local function bindHotkeys()
             local prevHotkey = hs.hotkey.bind(
                 mods,
                 CONFIG.keys.prev,
-                cyclePrevDebounced
+                cyclePrevThrottled
             )
             if prevHotkey then
                 state.hotkeys.prev = prevHotkey
@@ -391,7 +405,7 @@ local function bindHotkeys()
             local nextHotkey = hs.hotkey.bind(
                 mods,
                 CONFIG.keys.next,
-                cycleNextDebounced
+                cycleNextThrottled
             )
             if nextHotkey then
                 state.hotkeys.next = nextHotkey
@@ -410,7 +424,13 @@ local function setup(config)
 
     -- Merge config with defaults
     CONFIG = config or {}
-    LOG = CONFIG.debug == true
+
+    -- Raise the logger to debug when requested. Setting
+    -- `spoon.WindowCycle.logger.level = "debug"` directly works too, since all
+    -- diagnostics are emitted through obj.logger.
+    if CONFIG.debug == true then
+        pcall(function() obj.logger.setLogLevel('debug') end)
+    end
 
     -- Apply defaults for missing values
     CONFIG.lockMs = type(CONFIG.lockMs) == "number" and CONFIG.lockMs or DEFAULT_CONFIG.lockMs
@@ -427,6 +447,13 @@ local function setup(config)
 end
 
 function teardown()
+    -- Cancel any pending post-hop focus timer so it can't fire after stop.
+    if state.hopTimer then
+        pcall(function() state.hopTimer:stop() end)
+        state.hopTimer = nil
+    end
+    state.hopping = false
+
     -- Delete all hotkeys
     for name, hotkey in pairs(state.hotkeys) do
         safeDelete(hotkey)
@@ -463,12 +490,12 @@ function obj:bindHotkeys(mapping)
         self._keys = self._keys or {}
         if mapping.prev then
             local mods, key = table.unpack(mapping.prev)
-            self._keys.prevMods = mods
+            self._keys.prevMods = normalizeMods(mods)
             self._keys.prev = key
         end
         if mapping.next then
             local mods, key = table.unpack(mapping.next)
-            self._keys.nextMods = mods
+            self._keys.nextMods = normalizeMods(mods)
             self._keys.next = key
         end
     end
