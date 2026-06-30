@@ -89,6 +89,7 @@ local state = {
     config = nil,
     screen_watcher = nil,
     space_watcher = nil,
+    app_watcher = nil,
     active_hotkeys = {},
     current_screen_name = nil,
     current_screen = nil,
@@ -99,9 +100,10 @@ local state = {
     },
     is_discovering_spaces = false,
     is_applying = false,
-    active_operations = {},  -- track active async operations for cleanup
-    operation_id = 0,        -- incrementing ID for operations
-    last_notification = nil, -- track last notification for updates
+    active_operations = {},     -- track active async operations for cleanup
+    operation_id = 0,           -- incrementing ID for operations
+    current_operation_id = 0,   -- token for the in-flight layout op (cancellation)
+    last_notification = nil,    -- track last notification for updates
 }
 
 --------------------------------------------------------------------------------
@@ -193,12 +195,6 @@ local function get_app(bundle_id)
     if not bundle_id then return nil end
     local ok, app = pcall(hs.application.get, bundle_id)
     return ok and app or nil
-end
-
--- Escape string for AppleScript
-local function escape_applescript(str)
-    if not str then return "" end
-    return str:gsub('"', '\\"'):gsub('\\', '\\\\'):gsub('\n', '\\n')
 end
 
 -- Generate operation ID for tracking
@@ -440,32 +436,13 @@ local function exit_fullscreen_for_app(app, callback)
 
     Logger:debug("Found %d fullscreen windows for '%s'", #fs_windows, app_name)
 
-    -- Method 1: Try AppleScript menu click
-    local escaped_name = escape_applescript(app_name)
-    local script = string.format([[
-        tell application "%s" to activate
-        delay %f
-        tell application "System Events" to tell process "%s"
-            try
-                tell menu bar 1
-                    tell menu bar item "View"
-                        tell menu 1
-                            if exists menu item "Exit Full Screen" then
-                                click menu item "Exit Full Screen"
-                                return true
-                            end if
-                        end tell
-                    end tell
-                end tell
-            end try
-        end tell
-        return false
-    ]], escaped_name, T.UI.APPLESCRIPT_DELAY, escaped_name)
-
-    local ok, success, _ = hs.osascript.applescript(script)
-    if ok and success then
-        Logger:debug("AppleScript method succeeded for '%s'", app_name)
-    end
+    -- Method 1: native, non-blocking "View > Exit Full Screen" menu click.
+    -- Replaces a synchronous System Events AppleScript (activate + delay + menu
+    -- walk) that froze Hammerspoon's main loop ~0.5s per app. The app is already
+    -- frontmost on its own fullscreen Space here, so no activate is needed; the
+    -- direct/keyboard methods + the poll below remain as fallbacks.
+    local menu_ok = pcall(function() app:selectMenuItem({ "View", "Exit Full Screen" }) end)
+    Logger:debug("selectMenuItem exit-fullscreen for '%s' (ok=%s)", app_name, tostring(menu_ok))
 
     -- Method 2: Direct window flag
     for _, win in ipairs(app:allWindows() or {}) do
@@ -781,6 +758,9 @@ local function choose_target_screen_name()
     return nil
 end
 
+-- Forward declaration; defined later but referenced by handle_screen_change below.
+local scan_and_normalize_spaces
+
 local function handle_screen_change()
     Logger:info("Screen configuration changed")
 
@@ -902,6 +882,18 @@ local function invalidate_stale_cache()
     for _, sid in ipairs(stale) do
         state.model.spaces[sid] = nil
         Logger:debug("Invalidated stale cache for space %s", tostring(sid))
+    end
+end
+
+-- Drop cache entries whose occupant app is no longer running. Called on app
+-- termination so a quit fullscreen app's stale Space entry can't mislead a scan.
+local function prune_terminated_from_cache()
+    for sid, data in pairs(state.model.spaces) do
+        if data.occupantBid and not get_app(data.occupantBid) then
+            state.model.spaces[sid] = nil
+            Logger:debug("Pruned cache for terminated app: space %s -> %s",
+                tostring(sid), tostring(data.occupantBid))
+        end
     end
 end
 
@@ -1739,6 +1731,18 @@ function M.apply_layout(layout)
     local original_animation = hs.window.animationDuration
     hs.window.animationDuration = 0
 
+    -- Bail out of a superseded layout (a newer one took over), restoring the saved
+    -- animation setting. Returns true if this op was cancelled, so callers can
+    -- `if abort_if_cancelled(...) then return end` before doing more work.
+    local function abort_if_cancelled(where)
+        if operation_id ~= state.current_operation_id then
+            Logger:debug("Layout application cancelled %s", where)
+            hs.window.animationDuration = original_animation
+            return true
+        end
+        return false
+    end
+
     -- Parse layout
     local parsed = parse_layout(layout, profile)
 
@@ -1786,11 +1790,8 @@ function M.apply_layout(layout)
 
         -- Phase 1: Scan and normalize existing fullscreen spaces
         scan_and_normalize_spaces(target_screen, parsed.tilingSet, appWindows, function()
-            -- Check if operation was cancelled
-            if operation_id ~= state.current_operation_id then
-                Logger:debug("Layout application cancelled after space scan")
-                return
-            end
+            -- Bail if a newer layout superseded us during the space scan.
+            if abort_if_cancelled("after space scan") then return end
             -- Phase 2: Apply tiling (refresh collection after scan)
             -- Re-collect all windows to catch any that were moved out of fullscreen
             for bid, _ in pairs(parsed.allBundles) do
@@ -1809,14 +1810,13 @@ function M.apply_layout(layout)
                     end
                 end
             end
+
+            -- Skip tiling if superseded during the post-scan window re-collection.
+            if abort_if_cancelled("before tiling") then return end
             local tiles_moved = apply_tiling(parsed.tiling, appWindows, target_screen)
 
             local function complete_layout()
-                -- Check if operation was cancelled
-                if operation_id ~= state.current_operation_id then
-                    Logger:debug("Layout application cancelled before completion")
-                    return
-                end
+                if abort_if_cancelled("before completion") then return end
                 -- Phase 3: Apply fullscreen (use existing appWindows, don't re-collect)
                 -- Windows are already collected from scan and tiling phases
                 local fs_order = expand_fullscreen_order_block(parsed.fullscreenOrder, appWindows)
@@ -1848,15 +1848,6 @@ function M.apply_layout(layout)
                     if state.config and state.config.notifications then
                         Notifier:show("Layout Complete", layout_name .. " applied successfully", NOTIFICATION_TYPES.INFO)
                     end
-
-                    -- Process deferred layout if any
-                    local deferred = state._deferred_layout
-                    state._deferred_layout = nil
-                    if deferred and deferred ~= layout then
-                        hs.timer.doAfter(0.1, function()
-                            M.apply_layout(deferred)
-                        end)
-                    end
                 end)
             end
 
@@ -1864,6 +1855,8 @@ function M.apply_layout(layout)
             if tiles_moved > 0 then
                 Logger:debug("Second tiling pass in %.1fs", T.UI.SECOND_TILING_PASS_DELAY)
                 hs.timer.doAfter(T.UI.SECOND_TILING_PASS_DELAY, function()
+                    -- Skip the second pass entirely if a newer layout superseded us.
+                    if abort_if_cancelled("before second tiling pass") then return end
                     -- Only refresh windows for tiled apps
                     for tileName, bundleIDs in pairs(parsed.tiling) do
                         for _, bid in ipairs(bundleIDs) do
@@ -1907,6 +1900,14 @@ function M.setup(config)
     state.space_watcher = hs.spaces.watcher.new(update_space_cache)
     state.space_watcher:start()
 
+    -- Start app watcher to evict cache entries when their app quits
+    state.app_watcher = hs.application.watcher.new(function(_, eventType)
+        if eventType == hs.application.watcher.terminated then
+            prune_terminated_from_cache()
+        end
+    end)
+    state.app_watcher:start()
+
     -- Initial setup
     handle_screen_change()
 
@@ -1928,6 +1929,11 @@ function M.teardown()
     if state.space_watcher then
         state.space_watcher:stop()
         state.space_watcher = nil
+    end
+
+    if state.app_watcher then
+        state.app_watcher:stop()
+        state.app_watcher = nil
     end
 
     -- Cancel timers
