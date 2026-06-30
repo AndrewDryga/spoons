@@ -113,8 +113,8 @@ Cycle through windows and spaces seamlessly with keyboard shortcuts.
 ### WindowManager.spoon
 Advanced window manager with tiling layouts and fullscreen space management.
 
-### USBReset.spoon
-USB device reset and management for Thunderbolt docks.
+### ShowKeyPresses.spoon
+Lightweight keystroke visualizer — shows typed keys and shortcuts as overlay pills.
 
 ## Installation
 
