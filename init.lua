@@ -27,7 +27,10 @@ hs.loadSpoon("WindowCycle")
 ---@diagnostic disable-next-line: undefined-global
 spoon.WindowCycle.debounceMs = 70
 ---@diagnostic disable-next-line: undefined-global
-spoon.WindowCycle.spaceHopDelay = 0.1
+-- Hop is event-driven (polls for Space arrival + verifies the window is on the
+-- target Space), so no fixed delay is needed. This is a minimum settle floor;
+-- bump it (e.g. 0.05) only if you ever see the wrong window focused after a hop.
+spoon.WindowCycle.spaceHopDelay = 0
 if config.debug then
     ---@diagnostic disable-next-line: undefined-global
     spoon.WindowCycle.logger.level = "debug"

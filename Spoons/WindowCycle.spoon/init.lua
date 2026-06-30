@@ -24,10 +24,17 @@ obj.logger = hs.logger.new('WindowCycle')
 local MIN_WINDOW_SIZE = 8     -- ignore tiny utility/HUD windows (px)
 local POSITION_TOLERANCE = 10 -- X band width (px) for left-to-right column grouping
 
+-- Space-hop tuning. The hop is event-driven: after gotoSpace we poll until the
+-- target Space is actually active AND a window verified to live on it is ready to
+-- focus, rather than waiting a fixed "settle" guess. These bound that polling.
+local HOP_POLL_INTERVAL = 0.02 -- s, how often to re-check while a hop settles
+local HOP_POLL_TIMEOUT  = 0.5  -- s, overall cap before we stop waiting on a hop
+local HOP_EMPTY_GRACE   = 0.15 -- s, after arrival, how long to wait for a focusable window before accepting an empty Space
+
 -- Default configuration values
 local DEFAULT_CONFIG = {
-    lockMs = 70,     -- input throttle window in ms (public name: debounceMs)
-    hopSettle = 0.1, -- wait after a Space switch before reading windows (public: spaceHopDelay)
+    lockMs = 70,   -- input throttle window in ms (public name: debounceMs)
+    hopSettle = 0, -- minimum settle floor after a hop before focusing; 0 = fully event-driven (public: spaceHopDelay)
     keys = {
         mod = {},
         prev = "f18",
@@ -219,6 +226,46 @@ local function getCurrentSpaceIndex(screen)
     return nil, screenSpaces
 end
 
+-- Focus the first/last window on the current Space, but only if that window is
+-- verified to actually live on `targetSpaceId`. Returns true once it has focused
+-- a verified window. The verification guards against the window filter briefly
+-- returning stale (previous-Space) windows right after a hop — which is what lets
+-- us drop the old fixed settle delay instead of just guessing a smaller one.
+local function focusVerifiedWindow(screen, targetSpaceId, preferredPosition)
+    local windows = getWindowsOnCurrentSpace(screen)
+    if not windows or #windows == 0 then
+        return false
+    end
+
+    local target = (preferredPosition == "last") and windows[#windows] or windows[1]
+    if not target then
+        return false
+    end
+
+    -- Confirm the candidate is on the target Space before focusing it. If the API
+    -- is unavailable or errors, fall through and focus best-effort.
+    if targetSpaceId and hs.spaces and hs.spaces.windowSpaces then
+        local ok, spaces = pcall(hs.spaces.windowSpaces, target)
+        if ok and type(spaces) == "table" then
+            local onTarget = false
+            for _, sid in ipairs(spaces) do
+                if sid == targetSpaceId then
+                    onTarget = true
+                    break
+                end
+            end
+            if not onTarget then
+                return false
+            end
+        end
+    end
+
+    return pcall(function()
+        target:raise()
+        target:focus()
+    end)
+end
+
 local function hopToSpace(direction, preferredPosition, screen, currentIndex, allSpaces)
     screen = screen or getFocusedScreen()
     if not screen then return end
@@ -245,46 +292,73 @@ local function hopToSpace(direction, preferredPosition, screen, currentIndex, al
     -- Mark busy so rapid presses don't race the in-flight Space transition.
     state.hopping = true
 
-    -- Navigate to space and then focus the appropriate window
-    local ok, err = pcall(function()
-        hs.spaces.gotoSpace(targetSpaceId)
-
-        -- macOS needs a beat after gotoSpace before the window list for the new
-        -- Space is readable — this delay is load-bearing, not cosmetic.
-        local settleTime = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
-        state.hopTimer = hs.timer.doAfter(settleTime, function()
-            -- Release the lock first so a thrown focus call can't wedge cycling.
-            state.hopping = false
-            state.hopTimer = nil
-
-            local focusOk, focusErr = pcall(function()
-                local windows = getWindowsOnCurrentSpace(screen)
-                local targetWindow = nil
-
-                if windows and #windows > 0 then
-                    if preferredPosition == "first" then
-                        targetWindow = windows[1]
-                    elseif preferredPosition == "last" then
-                        targetWindow = windows[#windows]
-                    end
-                end
-
-                if targetWindow then
-                    targetWindow:raise()
-                    targetWindow:focus()
-                end
-            end)
-            if not focusOk then
-                log("Failed to focus after hop:", focusErr)
-            end
-        end)
-    end)
-
+    local startedAt = hs.timer.secondsSinceEpoch()
+    local ok, err = pcall(hs.spaces.gotoSpace, targetSpaceId)
     if not ok then
-        -- gotoSpace failed before we scheduled the settle timer; release the lock.
+        -- gotoSpace failed; release the lock.
         state.hopping = false
         log("Failed to hop to space:", err)
+        return
     end
+
+    local settleFloor = (CONFIG and CONFIG.hopSettle) or DEFAULT_CONFIG.hopSettle
+    local deadline = startedAt + HOP_POLL_TIMEOUT
+    local arrivalTime = nil
+
+    -- Has the screen actually switched to the target Space yet?
+    local function arrived()
+        if not (hs.spaces and hs.spaces.activeSpaceOnScreen) then
+            return true -- can't detect; rely on settleFloor + window verification
+        end
+        local okA, active = pcall(hs.spaces.activeSpaceOnScreen, screen)
+        return okA and active == targetSpaceId
+    end
+
+    local function finish(focused, timedOut, now)
+        -- Release the lock first so anything that throws can't wedge cycling.
+        state.hopping = false
+        state.hopTimer = nil
+        if CONFIG and CONFIG.debug then
+            log(string.format("hop %s settled in %.0f ms (focused=%s%s)",
+                tostring(direction),
+                ((now or hs.timer.secondsSinceEpoch()) - startedAt) * 1000,
+                tostring(focused),
+                timedOut and ", timed out" or ""))
+        end
+    end
+
+    -- Event-driven settle: poll until the Space is active AND a verified window is
+    -- focusable. Bounded by HOP_EMPTY_GRACE (empty Space) and HOP_POLL_TIMEOUT.
+    local function step()
+        local now = hs.timer.secondsSinceEpoch()
+
+        if not arrivalTime and arrived() then
+            arrivalTime = now
+        end
+
+        if arrivalTime and (now - startedAt) >= settleFloor then
+            local focusOk, focused = pcall(focusVerifiedWindow, screen, targetSpaceId, preferredPosition)
+            if focusOk and focused then
+                finish(true, false, now)
+                return
+            end
+            -- Arrived but nothing focusable yet: empty Space, or the window list is
+            -- still catching up. Give it a bounded grace period, then accept.
+            if (now - arrivalTime) >= HOP_EMPTY_GRACE then
+                finish(false, false, now)
+                return
+            end
+        end
+
+        if now >= deadline then
+            finish(false, true, now)
+            return
+        end
+
+        state.hopTimer = hs.timer.doAfter(HOP_POLL_INTERVAL, step)
+    end
+
+    step()
 end
 
 -- Window cycling logic

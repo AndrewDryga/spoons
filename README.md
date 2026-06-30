@@ -123,8 +123,8 @@ Cycle through windows on the current space with automatic space switching at bou
 hs.loadSpoon("WindowCycle")
 
 -- Customize timing (optional)
-spoon.WindowCycle.debounceMs = 70        -- Debounce delay (milliseconds)
-spoon.WindowCycle.spaceHopDelay = 0.1    -- Delay after space switch (seconds)
+spoon.WindowCycle.debounceMs = 70        -- Throttle window (ms): first press is instant, repeats are rate-limited
+spoon.WindowCycle.spaceHopDelay = 0      -- Min settle floor after a Space hop (s); 0 = fully event-driven
 
 -- Bind hotkeys
 spoon.WindowCycle:bindHotkeys({
