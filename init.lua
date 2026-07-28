@@ -85,7 +85,9 @@ local bundle_ids = {
     chrome      = "com.google.Chrome",
     slack       = "com.tinyspeck.slackmacgap",
     dash        = "com.kapeli.dashdoc",
-    chatgpt     = "com.openai.chat",
+    -- NOTE: the ChatGPT desktop app moved to the Codex bundle ID in the 2026
+    -- releases; /Applications/ChatGPT.app now reports com.openai.codex.
+    chatgpt     = "com.openai.codex",
     apple_music = "com.apple.Music",
 }
 

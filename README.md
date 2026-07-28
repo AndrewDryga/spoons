@@ -207,6 +207,11 @@ spoon.WindowManager:configure({
     debug = false,
     notifications = true,
 
+    -- Show an on-screen alert when a configured app's bundle ID can't be found
+    -- (e.g. an app update renamed it). Reported once per bundle ID per session,
+    -- with a suggested replacement. Set to false to log to the console only.
+    alert_on_config_error = true,
+
     profiles = {
         ["Built-in Retina Display"] = {
             -- Define reusable tiles for this screen
@@ -274,6 +279,19 @@ Find app bundle identifiers using:
 osascript -e 'id of app "Safari"'
 # Output: com.apple.Safari
 ```
+
+**If an app stops being placed:** its bundle ID may have changed (app updates
+occasionally rebrand them). WindowManager validates every configured bundle ID at
+startup and reports missing ones once, suggesting a likely replacement from the
+same vendor, e.g.:
+
+```
+[ERROR][wm] App not installed: bundle ID 'com.openai.chat' not found [layout config]
+            -- the app may have changed its bundle ID; same vendor installed:
+            'com.openai.codex' (ChatGPT)
+```
+
+Missing apps are skipped so the rest of the layout still applies.
 
 ## 🔧 Advanced Usage
 

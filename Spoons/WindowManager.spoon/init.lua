@@ -101,6 +101,7 @@ local state = {
     },
     is_discovering_spaces = false,
     is_applying = false,
+    reported_missing_apps = {}, -- bundle ID -> true, so we warn once per session
     active_operations = {},     -- track active async operations for cleanup
     operation_id = 0,           -- incrementing ID for operations
     current_operation_id = 0,   -- token for the in-flight layout op (cancellation)
@@ -252,43 +253,63 @@ local function pollUntil(label, checkFn, opts, on_done)
     local current_retry = 0
     local current_timeout = timeout
 
+    local poller, retry_timer
+    local cancelled = false
+
+    -- One cleanup for the WHOLE poll chain, including a pending retry. The retry
+    -- timer used to be untracked, so cleanup_all_operations() could not cancel it:
+    -- it would later fire attempt(), re-register itself, and keep polling (and
+    -- eventually fire on_done) for an operation that was already superseded.
+    local function cleanup()
+        cancelled = true
+        if poller then
+            poller:stop()
+            poller = nil
+        end
+        if retry_timer then
+            retry_timer:stop()
+            retry_timer = nil
+        end
+        -- Don't call cleanup_operation here as it would cause recursion
+        state.active_operations[op_id] = nil
+    end
+
     local function attempt()
+        if cancelled then return end
+
         local start_time = hs.timer.secondsSinceEpoch()
         local deadline = start_time + current_timeout
-        local poller
 
-        local function cleanup()
+        local function finish(success, result)
+            cleanup()
+            if on_done then on_done(success, result) end
+        end
+
+        local function on_timeout()
             if poller then
                 poller:stop()
                 poller = nil
             end
-            -- Don't call cleanup_operation here as it would cause recursion
-            state.active_operations[op_id] = nil
-        end
-
-        local function on_success(result)
-            Logger:debug("[pollUntil:%s] success after %d retries", label, current_retry)
-            cleanup()
-            if on_done then on_done(true, result) end
-        end
-
-        local function on_timeout()
-            cleanup()
-            state.active_operations[op_id] = nil -- Ensure cleanup
 
             if current_retry < retries then
                 current_retry = current_retry + 1
                 current_timeout = current_timeout * backoff
                 Logger:info("[pollUntil:%s] timeout, retry %d/%d with %.1fs timeout",
                     label, current_retry, retries, current_timeout)
-                hs.timer.doAfter(0.1 * current_retry, attempt) -- increasing delay between retries
+                -- Tracked via the shared cleanup() so an interrupt kills the chain.
+                retry_timer = hs.timer.doAfter(0.1 * current_retry, function()
+                    retry_timer = nil
+                    attempt()
+                end)
             else
                 Logger:warn("[pollUntil:%s] failed after %d retries", label, current_retry)
-                if on_done then on_done(false, nil) end
+                finish(false, nil)
             end
         end
 
         poller = hs.timer.new(interval, function()
+            if cancelled then return end
+
             local elapsed = hs.timer.secondsSinceEpoch() - start_time
 
             -- Call progress function if provided
@@ -299,7 +320,8 @@ local function pollUntil(label, checkFn, opts, on_done)
             -- Check the condition
             local ok, res = pcall(checkFn)
             if ok and res then
-                return on_success(res)
+                Logger:debug("[pollUntil:%s] success after %d retries", label, current_retry)
+                return finish(true, res)
             end
 
             -- Check for timeout
@@ -350,6 +372,122 @@ local function quiet_launch(bundle_id)
     end
 end
 
+-- Best-effort discovery of installed apps that share a missing app's vendor
+-- prefix, e.g. com.openai.chat -> com.openai.codex after an app is rebranded.
+-- Only ever runs for apps that are genuinely missing, so the mdfind cost is rare.
+local function suggest_bundle_ids(missing_bid)
+    local suggestions = {}
+    if type(missing_bid) ~= "string" then return suggestions end
+
+    -- vendor prefix: "com.openai" from "com.openai.chat"
+    local prefix = missing_bid:match("^([%w%-_]+%.[%w%-_]+)%.")
+    if not prefix then return suggestions end
+
+    local ok, out = pcall(hs.execute,
+        string.format("/usr/bin/mdfind \"kMDItemCFBundleIdentifier == '%s.*'\" 2>/dev/null", prefix))
+    if not (ok and type(out) == "string") then return suggestions end
+
+    for path in out:gmatch("[^\r\n]+") do
+        if path ~= "" then
+            local info_ok, info = pcall(hs.application.infoForBundlePath, path)
+            local bid = info_ok and info and info.CFBundleIdentifier
+            if bid and bid ~= missing_bid then
+                suggestions[#suggestions + 1] = {
+                    id = bid,
+                    name = path:match("([^/]+)%.app/?$") or path,
+                }
+            end
+        end
+    end
+    return suggestions
+end
+
+-- Report a configured-but-missing app once per bundle ID per session, with a
+-- suggested replacement when the app looks like it was renamed.
+local function report_missing_app(bundle_id, context)
+    if state.reported_missing_apps[bundle_id] then return end
+    state.reported_missing_apps[bundle_id] = true
+
+    local suggestions = suggest_bundle_ids(bundle_id)
+    local hint = ""
+    if #suggestions > 0 then
+        local parts = {}
+        for _, s in ipairs(suggestions) do
+            parts[#parts + 1] = string.format("'%s' (%s)", s.id, s.name)
+        end
+        hint = " -- the app may have changed its bundle ID; same vendor installed: " ..
+            table.concat(parts, ", ")
+    end
+
+    Logger:error("App not installed: bundle ID '%s' not found%s%s",
+        bundle_id, context and (" [" .. context .. "]") or "", hint)
+
+    -- A missing app is a CONFIG error the user must act on, and it is reported at
+    -- most once per bundle ID per session, so surface it even when the routine
+    -- progress notifications are turned off. Opt out with alert_on_config_error.
+    if not (state.config and state.config.alert_on_config_error == false) then
+        local msg = "WindowManager: app not installed\n" .. tostring(bundle_id)
+        if #suggestions > 0 then
+            msg = msg .. "\n\nTry instead:\n" .. suggestions[1].id
+        end
+        pcall(function() hs.alert.show(msg, 6) end)
+    end
+end
+
+-- Returns false only when we can positively determine the bundle ID is not
+-- installed. If the lookup API is unavailable we assume it is, so a missing API
+-- can never cause us to skip a valid app.
+local function bundle_is_installed(bundle_id)
+    if not bundle_id then return false end
+    if not (hs.application and hs.application.pathForBundleID) then return true end
+    local ok, path = pcall(hs.application.pathForBundleID, bundle_id)
+    if not ok then return true end
+    return path ~= nil and path ~= ""
+end
+
+-- Every bundle ID referenced anywhere in the configured profiles/layouts.
+local function collect_layout_bundle_ids(config)
+    local out = {}
+    if not (config and config.profiles) then return out end
+
+    for _, profile in pairs(config.profiles) do
+        for _, layout in ipairs(profile.layouts or {}) do
+            if type(layout.focusApp) == "string" then out[layout.focusApp] = true end
+            -- space_layouts[1] maps tileName -> bid(s); [2..] are arrays of bid(s).
+            -- Either way the *values* are the bundle IDs.
+            for _, space in pairs(layout.space_layouts or {}) do
+                if type(space) == "table" then
+                    for _, entry in pairs(space) do
+                        for _, bid in ipairs(to_array(entry)) do
+                            if type(bid) == "string" then out[bid] = true end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- Check every configured app at startup so a renamed/uninstalled bundle ID is
+-- reported immediately on reload, instead of silently skipping a tile later.
+local function validate_configured_apps(config)
+    local missing = 0
+    for bid in pairs(collect_layout_bundle_ids(config)) do
+        if not bundle_is_installed(bid) then
+            report_missing_app(bid, "layout config")
+            missing = missing + 1
+        end
+    end
+
+    if missing > 0 then
+        Logger:warn("%d configured app(s) not installed - those tiles will be skipped", missing)
+    else
+        Logger:debug("All configured app bundle IDs resolve")
+    end
+    return missing
+end
+
 local function ensure_apps_running(bundle_ids, with_progress)
     local apps_to_wait_for = {}
     local total = #bundle_ids
@@ -358,7 +496,13 @@ local function ensure_apps_running(bundle_ids, with_progress)
     for i, bid in ipairs(bundle_ids) do
         local app = get_app(bid)
         if not (app and app:isRunning()) then
-            if quiet_launch(bid) then
+            -- Never wait on an app that isn't installed: `open -b <id>` fails
+            -- asynchronously, so we'd otherwise poll the full launch timeout
+            -- (with retries, ~24s) on EVERY layout apply for an app that can
+            -- never appear. Fail fast with an actionable message instead.
+            if not bundle_is_installed(bid) then
+                report_missing_app(bid, "launch")
+            elseif quiet_launch(bid) then
                 apps_to_wait_for[bid] = true
                 launched = launched + 1
             end
@@ -674,20 +818,22 @@ local function poll_for_apps_ready(apps_to_wait_for, on_done)
     Logger:info("Waiting for %d app(s) to launch", count)
 
     pollUntil("apps_ready", function()
-        local remaining = {}
+        -- NB: count explicitly — `remaining` is keyed by bundle ID, so `#remaining`
+        -- is always 0 and the old progress log always claimed every app was ready.
+        local remaining_count = 0
         for bid, _ in pairs(apps_to_wait_for) do
             local app = get_app(bid)
             if not (app and app:isRunning()) then
-                remaining[bid] = true
+                remaining_count = remaining_count + 1
             end
         end
 
-        local ready_count = count - #remaining
+        local ready_count = count - remaining_count
         if ready_count > 0 then
             Logger:debug("%d/%d apps ready", ready_count, count)
         end
 
-        return next(remaining) == nil
+        return remaining_count == 0
     end, {
         interval = T.APP.READY_POLL_INTERVAL,
         timeout = T.APP.READY_TIMEOUT,
@@ -1780,6 +1926,10 @@ function M.apply_layout(layout)
     -- Wait for apps to be ready
     -- Wait for apps to launch
     poll_for_apps_ready(apps_to_launch, function(apps_ready)
+        -- Bail before ANY further work (window collection, Space scanning/hopping)
+        -- if a newer layout superseded us while we were waiting on app launches.
+        if abort_if_cancelled("while waiting for apps") then return end
+
         if not apps_ready then
             Logger:warn("Some apps failed to launch")
         end
@@ -1913,6 +2063,11 @@ function M.setup(config)
 
     state.config = config
     hs.window.animationDuration = 0
+
+    -- Surface renamed/uninstalled app bundle IDs now, rather than letting a tile
+    -- silently go missing the next time a layout is applied.
+    state.reported_missing_apps = {}
+    validate_configured_apps(config)
 
     -- Start screen watcher
     state.screen_watcher = hs.screen.watcher.new(schedule_screen_change_handler)
