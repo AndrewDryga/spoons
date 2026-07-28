@@ -85,9 +85,7 @@ local bundle_ids = {
     chrome      = "com.google.Chrome",
     slack       = "com.tinyspeck.slackmacgap",
     dash        = "com.kapeli.dashdoc",
-    -- NOTE: the ChatGPT desktop app moved to the Codex bundle ID in the 2026
-    -- releases; /Applications/ChatGPT.app now reports com.openai.codex.
-    chatgpt     = "com.openai.codex",
+    -- chatgpt     = "com.openai.codex",
     apple_music = "com.apple.Music",
 }
 
@@ -112,7 +110,7 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Bottom Left"]  = { bundle_ids.warp },
                         ["Top Right"]    = { bundle_ids.chrome },
-                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.chatgpt, bundle_ids.apple_music },
+                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.apple_music },
                     },
                 },
             },
@@ -126,7 +124,7 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.zed },
                         ["Bottom Left"]  = { bundle_ids.warp },
-                        ["Bottom Right"] = { bundle_ids.chatgpt, bundle_ids.apple_music, bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.apple_music, bundle_ids.dash },
                     },
                 },
             },
@@ -140,7 +138,7 @@ local screens_config = {
             --             ["Center"]       = { bundle_ids.apple_music },
             --             ["Top Left"]     = { bundle_ids.slack },
             --             ["Top Right"]    = { bundle_ids.dash },
-            --             ["Bottom Right"] = { bundle_ids.chatgpt },
+            --             ["Bottom Right"] = { },
             --         },
 
             --         [2] = { bundle_ids.chrome },
@@ -158,7 +156,7 @@ local screens_config = {
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.chrome },
                         ["Bottom Left"]  = { bundle_ids.zed },
-                        ["Bottom Right"] = { bundle_ids.chatgpt, bundle_ids.apple_music, bundle_ids.dash },
+                        ["Bottom Right"] = { bundle_ids.apple_music, bundle_ids.dash },
                     },
                 },
             },
@@ -182,7 +180,7 @@ local screens_config = {
                         ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chatgpt },
+                        ["Bottom Right"] = { },
                     },
 
                     [2] = { bundle_ids.chrome },
@@ -199,7 +197,7 @@ local screens_config = {
                         ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chatgpt },
+                        ["Bottom Right"] = { },
                     },
 
                     [2] = { bundle_ids.chrome },
@@ -216,7 +214,7 @@ local screens_config = {
                         ["Center"]       = { bundle_ids.apple_music },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.dash },
-                        ["Bottom Right"] = { bundle_ids.chatgpt },
+                        ["Bottom Right"] = { },
                     },
 
                     [2] = { bundle_ids.chrome },
