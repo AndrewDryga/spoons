@@ -65,12 +65,23 @@ package_spoon() {
     find "$build_spoon_path" -name "*.swp" -delete 2>/dev/null || true
     find "$build_spoon_path" -name "*~" -delete 2>/dev/null || true
 
-    # Create the zip file
+    # Create the zip file. NOTE: package_spoon is called from an `if`, which
+    # disables `set -e` inside it, so failures here must be checked explicitly —
+    # otherwise a missing `zip` binary silently produces an empty release.
     local zip_name="${spoon_name}.zip"
-    (cd "$BUILD_DIR" && zip -r "$zip_name" "$spoon_name" -q)
+    if ! (cd "$BUILD_DIR" && zip -r "$zip_name" "$spoon_name" -q); then
+        print_error "zip failed for ${spoon_name}"
+        rm -rf "$build_spoon_path"
+        return 1
+    fi
 
     # Remove the temporary directory
     rm -rf "$build_spoon_path"
+
+    if [ ! -s "${BUILD_DIR}/${zip_name}" ]; then
+        print_error "Expected ${BUILD_DIR}/${zip_name} was not created"
+        return 1
+    fi
 
     print_success "Created ${BUILD_DIR}/${zip_name}"
 }
@@ -83,6 +94,9 @@ create_checksums() {
 
     if command -v shasum >/dev/null 2>&1; then
         (cd "$BUILD_DIR" && shasum -a 256 *.zip > checksums.txt)
+        print_success "Created checksums.txt"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        (cd "$BUILD_DIR" && sha256sum *.zip > checksums.txt)
         print_success "Created checksums.txt"
     else
         echo "(checksums not available - shasum command not found)" > "$checksums_file"
@@ -149,17 +163,30 @@ main() {
 
     # Find and package all Spoons
     local spoon_count=0
+    local failed_count=0
     for spoon_dir in "$SPOONS_DIR"/*.spoon; do
         if [ -d "$spoon_dir" ]; then
             spoon_name=$(basename "$spoon_dir")
             if package_spoon "$spoon_name"; then
-                ((spoon_count++))
+                # NB: plain assignment, not ((spoon_count++)). Post-increment
+                # evaluates to the OLD value, so the first ((0++)) returns exit
+                # status 1 and `set -e` aborts the script. bash 3.2 (macOS) does
+                # not, which is why this only surfaced when CI moved to Linux.
+                spoon_count=$((spoon_count + 1))
+            else
+                failed_count=$((failed_count + 1))
             fi
         fi
     done
 
     if [ $spoon_count -eq 0 ]; then
         print_error "No Spoons found to package"
+        exit 1
+    fi
+
+    # Never publish a partial release.
+    if [ $failed_count -gt 0 ]; then
+        print_error "${failed_count} Spoon(s) failed to package - aborting"
         exit 1
     fi
 
