@@ -9,7 +9,7 @@ obj.__index = obj
 
 -- Metadata
 obj.name = "WindowManager"
-obj.version = "1.1.0"
+obj.version = "1.2.0"
 obj.author = "Andrew Dryga"
 obj.homepage = "https://github.com/AndrewDryga/spoons"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
