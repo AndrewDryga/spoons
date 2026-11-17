@@ -81,7 +81,7 @@ end
 -- You can get Bundle ID using `osascript -e 'id of app "Dash"'`
 local bundle_ids = {
     zed         = "dev.zed.Zed",
-    warp        = "dev.warp.Warp-Stable",
+    ghostty     = "com.mitchellh.ghostty",
     chrome      = "com.google.Chrome",
     slack       = "com.tinyspeck.slackmacgap",
     dash        = "com.kapeli.dashdoc",
@@ -108,7 +108,7 @@ local screens_config = {
                     [1] = {
                         ["Top"]          = { bundle_ids.zed },
                         ["Top Left"]     = { bundle_ids.slack },
-                        ["Bottom Left"]  = { bundle_ids.warp },
+                        ["Bottom Left"]  = { bundle_ids.ghostty },
                         ["Top Right"]    = { bundle_ids.chrome },
                         ["Bottom Right"] = { bundle_ids.dash, bundle_ids.apple_music },
                     },
@@ -123,7 +123,7 @@ local screens_config = {
                         ["Top"]          = { bundle_ids.chrome },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.zed },
-                        ["Bottom Left"]  = { bundle_ids.warp },
+                        ["Bottom Left"]  = { bundle_ids.ghostty },
                         ["Bottom Right"] = { bundle_ids.apple_music, bundle_ids.dash },
                     },
                 },
@@ -143,16 +143,16 @@ local screens_config = {
 
             --         [2] = { bundle_ids.chrome },
             --         [3] = { bundle_ids.zed },
-            --         [4] = { bundle_ids.warp },
+            --         [4] = { bundle_ids.ghostty },
             --     },
             -- },
             {
                 name = "Terminal",
                 hotkey = { mods = { "cmd" }, key = "3" },
-                focusApp = bundle_ids.warp,
+                focusApp = bundle_ids.ghostty,
                 space_layouts = {
                     [1] = {
-                        ["Top"]          = { bundle_ids.warp },
+                        ["Top"]          = { bundle_ids.ghostty },
                         ["Top Left"]     = { bundle_ids.slack },
                         ["Top Right"]    = { bundle_ids.chrome },
                         ["Bottom Left"]  = { bundle_ids.zed },
@@ -185,7 +185,7 @@ local screens_config = {
 
                     [2] = { bundle_ids.chrome },
                     [3] = { bundle_ids.zed },
-                    [4] = { bundle_ids.warp },
+                    [4] = { bundle_ids.ghostty },
                 },
             },
             {
@@ -202,13 +202,13 @@ local screens_config = {
 
                     [2] = { bundle_ids.chrome },
                     [3] = { bundle_ids.zed },
-                    [4] = { bundle_ids.warp },
+                    [4] = { bundle_ids.ghostty },
                 },
             },
             {
                 name = "Terminal",
                 hotkey = { mods = { "cmd" }, key = "3" },
-                focusApp = bundle_ids.warp,
+                focusApp = bundle_ids.ghostty,
                 space_layouts = {
                     [1] = {
                         ["Center"]       = { bundle_ids.apple_music },
@@ -219,7 +219,7 @@ local screens_config = {
 
                     [2] = { bundle_ids.chrome },
                     [3] = { bundle_ids.zed },
-                    [4] = { bundle_ids.warp },
+                    [4] = { bundle_ids.ghostty },
                 },
             },
         },
