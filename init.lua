@@ -163,6 +163,62 @@ local screens_config = {
         },
     },
 
+    -- Same layout as the LG, scaled to a 3440x1415 usable area (menu bar on
+    -- this screen, Dock on the laptop): golden-ratio columns/rows, 4px/2px gaps.
+    ["DELL U3415W"] = {
+        tiles = {
+            ["Top"]          = { anchor = "top-center", w = 1534, h = 1415 },
+            ["Top Left"]     = { anchor = "top-left", w = 949, h = 873 },
+            ["Top Right"]    = { anchor = "top-right", w = 949, h = 873 },
+            ["Bottom Left"]  = { anchor = "bottom-left", w = 949, h = 540 },
+            ["Bottom Right"] = { anchor = "bottom-right", w = 949, h = 540 },
+        },
+        layouts = {
+            {
+                name = "Editor",
+                hotkey = { mods = { "cmd" }, key = "1" },
+                focusApp = bundle_ids.zed,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.zed },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Bottom Left"]  = { bundle_ids.ghostty },
+                        ["Top Right"]    = { bundle_ids.chrome },
+                        ["Bottom Right"] = { bundle_ids.dash, bundle_ids.apple_music },
+                    },
+                },
+            },
+            {
+                name = "Browser",
+                hotkey = { mods = { "cmd" }, key = "2" },
+                focusApp = bundle_ids.chrome,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.chrome },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.zed },
+                        ["Bottom Left"]  = { bundle_ids.ghostty },
+                        ["Bottom Right"] = { bundle_ids.apple_music, bundle_ids.dash },
+                    },
+                },
+            },
+            {
+                name = "Terminal",
+                hotkey = { mods = { "cmd" }, key = "3" },
+                focusApp = bundle_ids.ghostty,
+                space_layouts = {
+                    [1] = {
+                        ["Top"]          = { bundle_ids.ghostty },
+                        ["Top Left"]     = { bundle_ids.slack },
+                        ["Top Right"]    = { bundle_ids.chrome },
+                        ["Bottom Left"]  = { bundle_ids.zed },
+                        ["Bottom Right"] = { bundle_ids.apple_music, bundle_ids.dash },
+                    },
+                },
+            },
+        },
+    },
+
     ["Built-in Retina Display"] = {
         tiles = {
             ["Center"]       = { anchor = "center", w = 1000, h = 800 },
