@@ -660,12 +660,31 @@ end
 -- Space Navigation (with retry logic)
 --------------------------------------------------------------------------------
 
+-- The display a Space belongs to (each display has its own Spaces when "Displays
+-- have separate Spaces" is on), or nil if it can't be resolved.
+local function screen_for_space(space_id)
+    local ok, uuid = pcall(hs.spaces.spaceDisplay, space_id)
+    if not (ok and uuid) then return nil end
+    for _, screen in ipairs(hs.screen.allScreens()) do
+        if screen:getUUID() == uuid then return screen end
+    end
+    return nil
+end
+
 local function goto_space_and_wait(space_id, callback, opts)
     opts = opts or {}
     local timeout = opts.timeout or T.SPACE.HOP_TIMEOUT
 
+    -- Watch the display that owns the Space: with several displays the focused
+    -- (main) screen may be another one, whose active Space never matches.
+    local space_screen = screen_for_space(space_id)
+    local function arrived()
+        local ok, active = pcall(hs.spaces.activeSpaceOnScreen, space_screen)
+        return ok and active == space_id
+    end
+
     -- Fast path: already on target space
-    if hs.spaces.activeSpaceOnScreen() == space_id then
+    if arrived() then
         Logger:debug("Already on space %s", tostring(space_id))
         if callback then
             hs.timer.doAfter(T.SPACE.HOP_SETTLE_DELAY, function() callback(true) end)
@@ -692,7 +711,7 @@ local function goto_space_and_wait(space_id, callback, opts)
         if operation_id and operation_id ~= state.current_operation_id then
             return false
         end
-        return hs.spaces.activeSpaceOnScreen() == space_id
+        return arrived()
     end, {
         interval = T.SPACE.HOP_POLL_INTERVAL,
         timeout = timeout,
@@ -717,8 +736,11 @@ end
 -- Window Settling (wait for windows to move to target space)
 --------------------------------------------------------------------------------
 
-local function poll_for_window_settling(app, target_space, on_done)
-    if not app or not target_space then
+-- Wait for an app's windows to finish leaving fullscreen, i.e. to be on regular
+-- (user) Spaces. Not a specific Space: a window exits fullscreen to the desktop
+-- it came from, which can be on another display than the layout's target.
+local function poll_for_window_settling(app, on_done)
+    if not app then
         if on_done then on_done(false) end
         return
     end
@@ -739,8 +761,13 @@ local function poll_for_window_settling(app, target_space, on_done)
 
         for _, win in ipairs(wins) do
             local ok, spaces = pcall(hs.spaces.windowSpaces, win)
-            if not (ok and spaces and #spaces == 1 and spaces[1] == target_space) then
+            if not (ok and spaces and #spaces > 0) then
                 return false
+            end
+            for _, sid in ipairs(spaces) do
+                if hs.spaces.spaceType(sid) ~= SPACE_TYPES.USER then
+                    return false
+                end
             end
         end
         return true
@@ -1645,16 +1672,56 @@ end
 -- Space Scanning and Normalization
 --------------------------------------------------------------------------------
 
+-- The standard window on a Space. Prefers the focused window, but with several
+-- displays focus can be on another one, so fall back to the Space's window list.
+local function window_on_space(sid)
+    local front = hs.window.frontmostWindow()
+    if front then
+        local ok, spaces = pcall(hs.spaces.windowSpaces, front)
+        for _, s in ipairs(ok and spaces or {}) do
+            if s == sid then return front end
+        end
+    end
+
+    local ok, ids = pcall(hs.spaces.windowsForSpace, sid)
+    if not (ok and ids) then return nil end
+    local on_space = {}
+    for _, id in ipairs(ids) do on_space[id] = true end
+    for _, win in ipairs(hs.window.allWindows()) do
+        if on_space[win:id()] and win:isStandard() then return win end
+    end
+    return nil
+end
+
 scan_and_normalize_spaces = function(target_screen, tilingSet, appWindows, callback)
-    local screen_spaces = hs.spaces.spacesForScreen(target_screen) or {}
+    local target_uuid = target_screen:getUUID()
     local fullscreen_spaces = {}
+    local space_screens = {} -- space ID -> display it was found on
     local all_known = true
 
-    for _, sid in ipairs(screen_spaces) do
-        if hs.spaces.spaceType(sid) == SPACE_TYPES.FULLSCREEN then
-            table.insert(fullscreen_spaces, sid)
-            if not state.model.spaces[sid] then
-                all_known = false
+    local function add_fullscreen_spaces(screen)
+        local ok, spaces = pcall(hs.spaces.spacesForScreen, screen)
+        for _, sid in ipairs(ok and spaces or {}) do
+            if hs.spaces.spaceType(sid) == SPACE_TYPES.FULLSCREEN then
+                table.insert(fullscreen_spaces, sid)
+                space_screens[sid] = screen
+                if not state.model.spaces[sid] then
+                    all_known = false
+                end
+            end
+        end
+    end
+
+    add_fullscreen_spaces(target_screen)
+
+    -- Apps that belong in tiles may be fullscreen on another display (e.g. the
+    -- laptop while an external monitor is the target), where tiling can't reach
+    -- them, so normalize those too. Discovery-only scans (no tiles) skip this.
+    if tilingSet and next(tilingSet) ~= nil then
+        for _, screen in ipairs(hs.screen.allScreens()) do
+            local uuid = screen:getUUID()
+            if uuid and uuid ~= target_uuid then
+                add_fullscreen_spaces(screen)
             end
         end
     end
@@ -1715,6 +1782,26 @@ scan_and_normalize_spaces = function(target_screen, tilingSet, appWindows, callb
     local original_space = hs.spaces.activeSpaceOnScreen()
     local i = 1
     local normalized = 0
+    local hopped_screens, hopped_uuids = {}, {} -- other displays we switched Spaces on
+
+    -- Leave each display on its first user space, not the original (which may
+    -- have been removed). Other displays go first and the target last, so the
+    -- windows to tile are on visible Spaces when tiling collects them.
+    local function return_to_first_spaces(screens, done)
+        local idx = 0
+        local function step()
+            idx = idx + 1
+            local screen = screens[idx]
+            if not screen then return done() end
+            local first_space = first_space_id(screen)
+            local ok, active = pcall(hs.spaces.activeSpaceOnScreen, screen)
+            if first_space and not (ok and active == first_space) then
+                return goto_space_and_wait(first_space, step)
+            end
+            step()
+        end
+        step()
+    end
 
     local function process_space()
         -- Check if operation was cancelled
@@ -1728,21 +1815,20 @@ scan_and_normalize_spaces = function(target_screen, tilingSet, appWindows, callb
             state.is_discovering_spaces = false
             Logger:info("Scan complete, normalized %d spaces", normalized)
 
-            -- Return to first user space, not original (which may have been removed)
-            local first_space = first_space_id(target_screen)
-            if first_space and hs.spaces.activeSpaceOnScreen() ~= first_space then
-                return goto_space_and_wait(first_space, callback)
-            else
-                return callback()
-            end
+            local screens = {}
+            for _, screen in ipairs(hopped_screens) do table.insert(screens, screen) end
+            table.insert(screens, target_screen)
+            return return_to_first_spaces(screens, callback)
         end
 
         local sid = fullscreen_spaces[i]
         i = i + 1
+        local sid_screen = space_screens[sid]
 
-        -- Verify space still exists
+        -- Verify space still exists on the display it was found on
         local exists = false
-        for _, s in ipairs(hs.spaces.spacesForScreen(target_screen) or {}) do
+        local ok_spaces, current_spaces = pcall(hs.spaces.spacesForScreen, sid_screen)
+        for _, s in ipairs(ok_spaces and current_spaces or {}) do
             if s == sid then
                 exists = true
                 break
@@ -1774,13 +1860,19 @@ scan_and_normalize_spaces = function(target_screen, tilingSet, appWindows, callb
             return process_space()
         end
 
+        local sid_uuid = sid_screen:getUUID()
+        if sid_uuid and sid_uuid ~= target_uuid and not hopped_uuids[sid_uuid] then
+            hopped_uuids[sid_uuid] = true
+            table.insert(hopped_screens, sid_screen)
+        end
+
         -- Hop to the space once: update cache and/or normalize if needed.
         goto_space_and_wait(sid, function(success)
             if not success then
                 return process_space()
             end
 
-            local front = hs.window.frontmostWindow()
+            local front = window_on_space(sid)
             if front and front:application() then
                 local app = front:application()
                 local bid = app:bundleID()
@@ -1820,14 +1912,12 @@ scan_and_normalize_spaces = function(target_screen, tilingSet, appWindows, callb
                         pcall(function() front:focus() end)
                         hs.timer.doAfter(0.1, function()
                             exit_fullscreen_for_app(app, function()
-                                local first_space = first_space_id(target_screen)
-                                poll_for_window_settling(app, first_space, process_space)
+                                poll_for_window_settling(app, process_space)
                             end)
                         end)
                     else
                         exit_fullscreen_for_app(app, function()
-                            local first_space = first_space_id(target_screen)
-                            poll_for_window_settling(app, first_space, process_space)
+                            poll_for_window_settling(app, process_space)
                         end)
                     end
                     return
