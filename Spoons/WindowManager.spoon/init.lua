@@ -884,16 +884,28 @@ end
 
 local function choose_target_screen_name()
     local profiles = state.config.profiles or {}
-    local available_screens = hs.screen.allScreens()
+    local default_name = state.config.defaultScreenName
+    local default_screen = nil
 
-    -- Find first screen with a profile
-    for _, screen in ipairs(available_screens) do
+    -- Find first screen with a profile. The default screen (e.g. the built-in
+    -- display) only wins when no other connected screen has a profile, so an
+    -- external monitor is picked even while the built-in is the primary display.
+    for _, screen in ipairs(hs.screen.allScreens()) do
         local name = screen:name()
         if profiles[name] then
-            state.current_screen = screen
-            Logger:info("Selected screen '%s' as target", name)
-            return name
+            if name ~= default_name then
+                state.current_screen = screen
+                Logger:info("Selected screen '%s' as target", name)
+                return name
+            end
+            default_screen = screen
         end
+    end
+
+    if default_screen then
+        state.current_screen = default_screen
+        Logger:info("Selected default screen '%s' as target", default_name)
+        return default_name
     end
 
     -- Fallback to main screen
@@ -2207,6 +2219,7 @@ end
 ---  * config - A table containing configuration with:
 ---    * debug - boolean, enable debug logging (default: false)
 ---    * notifications - boolean, enable notifications (default: true)
+---    * defaultScreenName - optional string, profile used only when no other connected screen has a profile
 ---    * profiles - table of screen name to profile mappings, each profile contains:
 ---      * tiles - table of tile definitions with anchor, w/h or wPct/hPct
 ---      * layouts - array of layout definitions with:

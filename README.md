@@ -212,6 +212,10 @@ spoon.WindowManager:configure({
     -- with a suggested replacement. Set to false to log to the console only.
     alert_on_config_error = true,
 
+    -- Profile used only when no other connected screen has one, so an external
+    -- monitor's profile wins even while the laptop display is the primary one.
+    defaultScreenName = "Built-in Retina Display",
+
     profiles = {
         ["Built-in Retina Display"] = {
             -- Define reusable tiles for this screen
